@@ -1286,7 +1286,172 @@ cosilico compare reform.yaml --year 2027 \
   --scenario-b "tcja_extended"
 ```
 
-### 7.5 Economic Indices and Forecasts
+### 7.5 Unknown and Uncertain Parameter Values
+
+Not all parameter values are known. The engine must explicitly represent gaps and uncertainty rather than silently interpolating or extrapolating.
+
+**The problem:**
+
+```yaml
+# Current behavior: 2024 value persists until 2027
+gov.some.parameter:
+  values:
+    2024-01-01: 1000
+    2027-01-01: 1200
+
+# What we actually know:
+# - 2024: 1000 (published)
+# - 2025: ? (not yet announced)
+# - 2026: ? (not yet announced)
+# - 2027: 1200 (from statute)
+```
+
+**Solution: explicit `unknown` markers**
+
+```yaml
+gov.irs.eitc.max_amount:
+  published:
+    2024-01-01:
+      values: {0: 632, 1: 4213, 2: 6960, 3: 7830}
+      reference: "Rev. Proc. 2023-34"
+
+    2025-01-01: unknown  # IRS hasn't published yet
+
+    2026-01-01: unknown
+
+    # Known from statute (TCJA sunset provisions specify 2027+ structure)
+    2027-01-01:
+      values: {0: 649, 1: 4325, 2: 7150, 3: 8046}
+      reference: "26 USC § 32(b) post-TCJA sunset"
+```
+
+**Detailed unknown status:**
+
+```yaml
+gov.state.ca.ctc.amount:
+  published:
+    2024-01-01:
+      value: 1000
+      reference: "CA Rev. & Tax Code § 17052.1"
+
+    2025-01-01:
+      status: unknown
+      reason: "FTB has not published 2025 values"
+      expected_by: 2024-12-15
+      subscribe: true  # Flag for monitoring
+
+    2026-01-01:
+      status: unknown
+      reason: "Program funding uncertain - depends on budget"
+      contingent_on: "ca_2025_budget"
+```
+
+**Projected vs unknown:**
+
+```yaml
+gov.irs.income.brackets:
+  published:
+    2024-01-01:
+      values: [11600, 47150, 100525, 191950, 243725, 609350]
+      reference: "Rev. Proc. 2023-34"
+
+    # We have a projection but it's not official
+    2025-01-01:
+      status: projected
+      values: [11925, 48475, 103350, 197300, 250525, 626350]
+      method: "chained_cpi indexation"
+      confidence: high  # Statutory formula is clear
+      forecast_vintage: 2024-06
+
+    # Unknown - too far out, depends on inflation
+    2028-01-01:
+      status: unknown
+      reason: "No reliable forecast available"
+
+    # Unknown - depends on legislation
+    2026-01-01:
+      status: unknown
+      reason: "TCJA sunset creates uncertainty"
+      scenarios:
+        tcja_extended: { status: projected, values: [...] }
+        tcja_sunset: { status: projected, values: [...] }
+```
+
+**Engine behavior:**
+
+```python
+# Default: error on unknown
+calculate(person, period="2025")
+# → Error: Parameter gov.irs.eitc.max_amount unknown for 2025-01-01
+#   Reason: IRS hasn't published yet
+#   Expected by: 2024-12-15
+
+# Allow unknown (returns null)
+calculate(person, period="2025", unknown_params="null")
+# → {"eitc": null, "warnings": ["eitc depends on unknown parameter"]}
+
+# Use projections if available
+calculate(person, period="2025", unknown_params="projected")
+# → {"eitc": 3584, "confidence": "projected", "method": "chained_cpi indexation"}
+
+# Extrapolate using statutory formula (last resort)
+calculate(person, period="2025", unknown_params="extrapolate")
+# → {"eitc": 3590, "confidence": "extrapolated", "warning": "using statutory formula"}
+```
+
+**API query for parameter status:**
+
+```bash
+# What parameters are unknown for 2025?
+GET /api/v1/parameters/status?period=2025-01-01&status=unknown
+
+{
+  "unknown": [
+    {
+      "parameter": "gov.irs.eitc.max_amount",
+      "reason": "IRS hasn't published yet",
+      "expected_by": "2024-12-15",
+      "has_projection": true
+    },
+    {
+      "parameter": "gov.state.ca.ctc.amount",
+      "reason": "FTB has not published 2025 values",
+      "expected_by": "2024-12-15",
+      "has_projection": false
+    }
+  ],
+  "projected": [
+    {
+      "parameter": "gov.irs.income.brackets",
+      "method": "chained_cpi indexation",
+      "confidence": "high"
+    }
+  ]
+}
+```
+
+**Validation:**
+
+```bash
+# Check what periods are fully calculable
+cosilico validate coverage --jurisdiction us.federal
+
+2024: ✓ all parameters known
+2025: ⚠ 3 parameters unknown, 12 projected
+2026: ⚠ 8 parameters unknown (TCJA uncertainty)
+2027: ✗ 15 parameters unknown
+
+# List unknown parameters
+cosilico validate unknown --period 2025
+
+gov.irs.eitc.max_amount
+  Status: unknown
+  Reason: IRS hasn't published yet
+  Expected: 2024-12-15
+  Projection available: yes (chained_cpi, confidence: high)
+```
+
+### 7.6 Economic Indices and Forecasts
 
 Indices separate actuals from forecasts, with forecast vintages tracked:
 
@@ -1361,7 +1526,7 @@ cpi_u:
           2026: 3.5
 ```
 
-### 7.6 Microdata Versioning
+### 7.7 Microdata Versioning
 
 Microdata vintages capture the complete state of survey data:
 
@@ -1479,7 +1644,7 @@ reproducibility:
   random_seed: 42
 ```
 
-### 7.7 Simulation Manifests
+### 7.8 Simulation Manifests
 
 Every simulation produces a manifest for complete reproducibility:
 
@@ -1552,7 +1717,7 @@ outputs:
   audit_log: results/audit.jsonl
 ```
 
-### 7.8 DSL Access to Versioned Data
+### 7.9 DSL Access to Versioned Data
 
 ```cosilico
 # Default: latest knowledge date, uses precedence rules
@@ -1582,7 +1747,7 @@ let cpi = index(cpi_u, forecast_provider: cbo)
 let cpi_high = index(cpi_u, forecast_provider: custom.high_inflation)
 ```
 
-### 7.9 CLI Commands
+### 7.10 CLI Commands
 
 ```bash
 # Run with current knowledge (default)
@@ -1622,7 +1787,7 @@ cosilico vintages --forecasts cbo
 cosilico vintages --parameters gov.irs.income.brackets
 ```
 
-### 7.10 Audit Trail
+### 7.11 Audit Trail
 
 Every calculation includes full provenance:
 
@@ -1665,7 +1830,7 @@ Every calculation includes full provenance:
 }
 ```
 
-### 7.11 Document Archival
+### 7.12 Document Archival
 
 Government sources disappear. Websites restructure, PDFs get removed, links rot. Every citation must be backed by an archived copy.
 
@@ -2088,7 +2253,7 @@ GET /api/v1/graph/snap
 }
 ```
 
-### 7.12 Directory Structure
+### 7.13 Directory Structure
 
 ```
 cosilico/
