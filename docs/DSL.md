@@ -995,46 +995,547 @@ jobs:
 
 ---
 
-## 7. Parameters
+## 7. Parameters and Data Versioning
 
-Parameters are defined in YAML (not the DSL) for easier editing:
+Cosilico implements **full bi-temporal versioning** across all inputs: parameters, indices, forecasts, and microdata. This enables complete reproducibility of any historical simulation.
 
-```yaml
-# parameters/us/federal/irs/credits/eitc.yaml
+### 7.1 The Reproducibility Problem
 
-gov.irs.eitc:
-  max_amount:
-    description: Maximum EITC by number of children
-    reference: "26 USC § 32(b)(2)"
-    unit: USD
-    values:
-      2024-01-01:
-        0_children: 632
-        1_child: 4213
-        2_children: 6960
-        3_or_more_children: 7830
-      2023-01-01:
-        0_children: 600
-        1_child: 3995
-        2_children: 6604
-        3_or_more_children: 7430
+A simulation depends on many inputs that change over time:
 
-  phase_in_rate:
-    description: Phase-in rate by number of children
-    reference: "26 USC § 32(b)(1)(A)"
-    unit: rate
-    values:
-      2024-01-01:
-        0_children: 0.0765
-        1_child: 0.34
-        2_children: 0.40
-        3_or_more_children: 0.45
+| Input Type | Example | Changes when? |
+|------------|---------|---------------|
+| Statutory parameters | EITC base rates | Congress passes law |
+| Inflation-adjusted parameters | Tax brackets | IRS publishes annually |
+| Economic indices | CPI-U | BLS publishes monthly |
+| Forecasts | Projected CPI | CBO updates quarterly |
+| Microdata | CPS ASEC | Census releases annually |
+| Imputations | Childcare expense model | We retrain periodically |
+| Calibration weights | Population targets | Updated with new Census data |
+
+To reproduce a simulation from June 2024, you need ALL inputs as they existed in June 2024.
+
+### 7.2 Bi-Temporal Model
+
+Every value has two time dimensions:
+
+- **Effective date**: When the value applies (e.g., "2025 tax year")
+- **Knowledge date**: When we knew this value (e.g., "as of June 2024")
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         Knowledge Date                          │
+│              2024-02      2024-06      2024-11                  │
+├─────────────┬────────────┬────────────┬────────────┬────────────┤
+│ Effective   │            │            │            │            │
+│ Date        │            │            │            │            │
+├─────────────┼────────────┼────────────┼────────────┼────────────┤
+│ 2024        │ Projected  │ Projected  │ Published  │ ← IRS      │
+│             │ $11,850    │ $11,920    │ $11,600    │   released │
+├─────────────┼────────────┼────────────┼────────────┼────────────┤
+│ 2025        │ Projected  │ Projected  │ Projected  │            │
+│             │ $12,100    │ $12,175    │ $12,250    │            │
+├─────────────┼────────────┼────────────┼────────────┼────────────┤
+│ 2026        │ Projected  │ Projected  │ Projected  │            │
+│             │ $12,350    │ $12,400    │ $12,500    │            │
+└─────────────┴────────────┴────────────┴────────────┴────────────┘
 ```
 
-DSL references parameters:
+### 7.3 Parameter Tiers
+
+Parameters have a precedence hierarchy:
+
+```
+published > projected > statutory_calculation
+```
+
+1. **Published**: Official government source (IRS Rev Proc, SSA announcement)
+2. **Projected**: Our calculation using statute formula + forecasts
+3. **Statutory calculation**: On-the-fly from base year + inflation index
+
+```yaml
+# rules/us/federal/irs/income/brackets.yaml
+
+gov.irs.income.brackets.single:
+  description: Income tax bracket thresholds for single filers
+  unit: USD
+
+  # Tier 1: Statutory basis (for calculating projections)
+  statute:
+    reference: "26 USC § 1(j)(2)"
+    enacted: "Tax Cuts and Jobs Act of 2017, Pub.L. 115-97 § 11001"
+    base_year: 2018
+    base_values: [9525, 38700, 82500, 157500, 200000, 500000]
+    inflation_index: cpi_u
+    rounding: -50  # Round down to nearest $50
+
+  # Tier 2: Official published values (authoritative)
+  published:
+    2018-01-01:
+      values: [9525, 38700, 82500, 157500, 200000, 500000]
+      reference: "Rev. Proc. 2017-58"
+      published_date: 2017-10-19
+    2019-01-01:
+      values: [9700, 39475, 84200, 160725, 204100, 510300]
+      reference: "Rev. Proc. 2018-57"
+      published_date: 2018-11-15
+    # ...
+    2024-01-01:
+      values: [11600, 47150, 100525, 191950, 243725, 609350]
+      reference: "Rev. Proc. 2023-34"
+      published_date: 2023-11-09
+
+  # Tier 3: Our projections (vintaged)
+  projected:
+    2024-02:  # February 2024 projection vintage
+      method: statutory_inflation
+      forecast_provider: cbo
+      forecast_vintage: 2024-02
+      values:
+        2025-01-01: [11850, 48200, 102800, 196200, 249300, 623250]
+        2026-01-01: [12100, 49250, 105100, 200500, 254800, 637000]
+
+    2024-06:  # June 2024 projection vintage
+      method: statutory_inflation
+      forecast_provider: cbo
+      forecast_vintage: 2024-06
+      values:
+        2025-01-01: [11925, 48475, 103350, 197300, 250525, 626350]
+        2026-01-01: [12175, 49500, 105550, 201500, 255950, 639900]
+
+    2024-11:  # November 2024 projection vintage (latest)
+      method: statutory_inflation
+      forecast_provider: cbo
+      forecast_vintage: 2024-11
+      values:
+        2025-01-01: [11975, 48650, 103725, 198050, 251525, 628850]
+        2026-01-01: [12250, 49750, 106050, 202250, 257075, 642700]
+```
+
+### 7.4 Economic Indices and Forecasts
+
+Indices separate actuals from forecasts, with forecast vintages tracked:
+
+```yaml
+# data/indices/cpi_u.yaml
+
+cpi_u:
+  description: Consumer Price Index for All Urban Consumers
+  source: BLS
+  series_id: CUUR0000SA0
+  unit: index
+  base: "1982-84=100"
+
+  actuals:
+    # Monthly values from BLS
+    2023-01-01: 299.170
+    2023-02-01: 300.840
+    # ...
+    2024-10-01: 315.664
+    last_updated: 2024-11-13
+    update_schedule: "~15th of each month"
+
+  forecasts:
+    cbo:
+      # Each vintage is a complete forecast as of that date
+      2024-02:
+        published: 2024-02-07
+        reference: "CBO Budget and Economic Outlook, Feb 2024"
+        annual_percent_change:
+          2024: 2.8
+          2025: 2.4
+          2026: 2.2
+          2027: 2.1
+          2028: 2.0
+
+      2024-06:
+        published: 2024-06-18
+        reference: "CBO Budget and Economic Outlook Update, June 2024"
+        annual_percent_change:
+          2024: 2.9
+          2025: 2.3
+          2026: 2.1
+          2027: 2.0
+          2028: 2.0
+
+      2024-11:
+        published: 2024-11-05
+        reference: "CBO Monthly Budget Review, Nov 2024"
+        annual_percent_change:
+          2024: 2.9
+          2025: 2.5
+          2026: 2.3
+          2027: 2.1
+          2028: 2.0
+
+    fed:
+      2024-09:
+        published: 2024-09-18
+        reference: "FOMC Summary of Economic Projections"
+        annual_percent_change:
+          2024: 2.3
+          2025: 2.1
+          2026: 2.0
+
+    # Custom scenarios for analysis
+    custom:
+      high_inflation:
+        description: "Persistent inflation scenario"
+        annual_percent_change:
+          2024: 3.5
+          2025: 4.0
+          2026: 3.5
+```
+
+### 7.5 Microdata Versioning
+
+Microdata vintages capture the complete state of survey data:
+
+```yaml
+# data/microdata/cps/vintages/2024-06/manifest.yaml
+
+vintage: 2024-06
+created: 2024-06-10T14:30:00Z
+description: "CPS ASEC 2024 with Q2 imputations and weight calibration"
+
+# Source data
+sources:
+  cps_asec:
+    description: Current Population Survey Annual Social and Economic Supplement
+    survey_year: 2024
+    reference_year: 2023  # Income reference year
+    source: census.gov
+    downloaded: 2024-04-15
+    original_file: asec2024_pubuse.dat
+    checksum: sha256:abc123def456...
+
+  soi_puf:
+    description: IRS Statistics of Income Public Use File
+    tax_year: 2021
+    source: irs.gov
+    checksum: sha256:789xyz...
+
+# Processing pipeline
+processing:
+  # Step 1: Imputation
+  imputation:
+    model_version: "2024-05"
+    models:
+      childcare_expense:
+        method: gradient_boosting
+        training_data: sipp_2023
+        features: [age_youngest_child, employment_income, state, marital_status]
+        r2_score: 0.73
+
+      health_insurance_premium:
+        method: quantile_regression
+        training_data: meps_2022
+        features: [age, family_size, state, employer_coverage]
+        r2_score: 0.68
+
+      rent_expense:
+        method: random_forest
+        training_data: acs_2023
+        features: [state, county_fips, family_size, income]
+        r2_score: 0.81
+
+  # Step 2: Tax simulation (to get calculated variables for calibration)
+  tax_simulation:
+    engine_version: "1.2.3"
+    rules_commit: "a1b2c3d"
+    variables_calculated:
+      - income_tax
+      - payroll_tax
+      - eitc
+      - snap
+
+  # Step 3: Weight calibration
+  calibration:
+    method: microcalibrate
+    algorithm: l0_regularized
+
+    targets:
+      # Administrative totals
+      - source: irs_soi
+        vintage: 2022
+        variables:
+          agi_total: 14_200_000_000_000
+          eitc_recipients: 31_000_000
+          eitc_total: 57_000_000_000
+
+      # Census population controls
+      - source: census_population_estimates
+        vintage: 2024
+        variables:
+          total_population: 335_000_000
+          population_by_state: {...}
+
+      # ACS economic targets
+      - source: acs_1year
+        vintage: 2023
+        variables:
+          median_household_income: 80_610
+          poverty_rate: 0.114
+
+    results:
+      weight_adjustment_range: [0.31, 2.87]
+      converged: true
+      iterations: 23
+
+# Output dataset stats
+output:
+  file: enhanced.parquet
+  checksum: sha256:final789...
+  records:
+    households: 75_432
+    tax_units: 82_156
+    persons: 182_651
+
+  variables:
+    original: 412
+    imputed: 8
+    calculated: 156
+    total: 576
+
+# Reproducibility
+reproducibility:
+  git_repo: cosilico/us-data
+  commit: "e4f5g6h"
+  docker_image: "cosilico/data-pipeline:2024-06"
+  random_seed: 42
+```
+
+### 7.6 Simulation Manifests
+
+Every simulation produces a manifest for complete reproducibility:
+
+```yaml
+# simulations/2024_q2_eitc_expansion/manifest.yaml
+
+simulation:
+  id: "sim_2024_q2_eitc_expansion"
+  name: "EITC Expansion Analysis Q2 2024"
+  created: 2024-06-15T14:30:00Z
+  created_by: "analyst@cosilico.ai"
+
+# Temporal coordinates
+temporal:
+  effective_date: 2025-01-01      # Policy year being modeled
+  knowledge_date: 2024-06-15      # All inputs as of this date
+
+# Pinned versions
+versions:
+  engine:
+    version: "1.2.3"
+    commit: "a1b2c3d"
+
+  rules:
+    repo: cosilico/us-rules
+    commit: "b2c3d4e"
+    branch: main
+
+  parameters:
+    projection_vintage: 2024-06
+    forecast_provider: cbo
+    forecast_vintage: 2024-06
+
+  microdata:
+    dataset: cps_enhanced
+    vintage: 2024-06
+    manifest_checksum: sha256:abc123...
+
+# What was run
+reform:
+  name: "EITC Phase-in Rate Increase"
+  file: reforms/eitc_expansion.yaml
+  parameters_modified:
+    gov.irs.eitc.phase_in_rate:
+      baseline: {0: 0.0765, 1: 0.34, 2: 0.40, 3: 0.45}
+      reform: {0: 0.15, 1: 0.40, 2: 0.45, 3: 0.50}
+
+# Results summary
+results:
+  baseline:
+    total_eitc: 57_200_000_000
+    eitc_recipients: 31_450_000
+    avg_eitc: 1_818
+
+  reform:
+    total_eitc: 72_800_000_000
+    eitc_recipients: 34_200_000
+    avg_eitc: 2_129
+
+  impact:
+    cost: 15_600_000_000
+    new_recipients: 2_750_000
+    avg_benefit_increase: 311
+
+# Output files
+outputs:
+  summary: results/summary.json
+  distributional: results/distributional.parquet
+  household_impacts: results/household_impacts.parquet
+  audit_log: results/audit.jsonl
+```
+
+### 7.7 DSL Access to Versioned Data
+
 ```cosilico
-let max_credit = parameter(gov.irs.eitc.max_amount[num_qualifying_children])
-let phase_in_rate = parameter(gov.irs.eitc.phase_in_rate[num_qualifying_children])
+# Default: latest knowledge date, uses precedence rules
+let brackets = parameter(gov.irs.income.brackets.single)
+
+# Force specific tier
+let brackets_official = parameter(
+  gov.irs.income.brackets.single,
+  tier: published  # Only use IRS-published values
+)
+
+# Historical knowledge date
+let brackets_june = parameter(
+  gov.irs.income.brackets.single,
+  as_of: 2024-06-15  # What we knew in June
+)
+
+# Specific projection vintage
+let brackets_projected = parameter(
+  gov.irs.income.brackets.single,
+  tier: projected,
+  vintage: 2024-06
+)
+
+# Index with forecast selection
+let cpi = index(cpi_u, forecast_provider: cbo)
+let cpi_high = index(cpi_u, forecast_provider: custom.high_inflation)
+```
+
+### 7.8 CLI Commands
+
+```bash
+# Run with current knowledge (default)
+cosilico sim reform.yaml --year 2025
+
+# Pin to historical knowledge date
+cosilico sim reform.yaml --year 2025 --knowledge-date 2024-06-15
+
+# Specify forecast provider
+cosilico sim reform.yaml --year 2025 --forecast-provider cbo --forecast-vintage 2024-06
+
+# Pin microdata vintage
+cosilico sim reform.yaml --year 2025 --microdata-vintage 2024-03
+
+# Full reproducibility from manifest
+cosilico sim --manifest simulations/2024_q2_eitc_expansion/manifest.yaml
+
+# Compare across vintages
+cosilico diff reform.yaml \
+  --knowledge-date 2024-02-15 \
+  --vs-knowledge-date 2024-11-15
+
+# Compare microdata vintages
+cosilico diff reform.yaml \
+  --microdata-vintage 2024-03 \
+  --vs-microdata-vintage 2024-06
+
+# Show what changed between vintages
+cosilico vintage-diff \
+  --parameter gov.irs.income.brackets.single \
+  --from 2024-02 \
+  --to 2024-11
+
+# List available vintages
+cosilico vintages --microdata
+cosilico vintages --forecasts cbo
+cosilico vintages --parameters gov.irs.income.brackets
+```
+
+### 7.9 Audit Trail
+
+Every calculation includes full provenance:
+
+```json
+{
+  "calculation": {
+    "variable": "income_tax",
+    "value": 8521.00,
+    "effective_date": "2025-01-01",
+    "knowledge_date": "2024-06-15"
+  },
+
+  "parameters_used": {
+    "gov.irs.income.brackets.single": {
+      "value": [11925, 48475, 103350, 197300, 250525, 626350],
+      "tier": "projected",
+      "projection_vintage": "2024-06",
+      "method": "statutory_inflation",
+      "inputs": {
+        "base_values": [9525, 38700, 82500, 157500, 200000, 500000],
+        "base_year": 2018,
+        "index": "cpi_u",
+        "forecast_provider": "cbo",
+        "forecast_vintage": "2024-06"
+      }
+    },
+    "gov.irs.income.rates": {
+      "value": [0.10, 0.12, 0.22, 0.24, 0.32, 0.35, 0.37],
+      "tier": "published",
+      "reference": "26 USC § 1(j)(2)(A)"
+    }
+  },
+
+  "microdata": {
+    "dataset": "cps_enhanced",
+    "vintage": "2024-06",
+    "record_id": "h_12345",
+    "weight": 1523.4
+  }
+}
+```
+
+### 7.10 Directory Structure
+
+```
+cosilico/
+├── rules/
+│   └── us/federal/irs/
+│       └── credits/
+│           └── eitc/
+│               ├── eitc.cosilico       # Rules
+│               ├── parameters.yaml      # Parameters with tiers
+│               └── tests.yaml           # Tests
+│
+├── data/
+│   ├── indices/
+│   │   ├── cpi_u.yaml                  # Actuals + forecast vintages
+│   │   ├── chained_cpi.yaml
+│   │   └── wage_index.yaml
+│   │
+│   ├── forecasts/
+│   │   ├── cbo/
+│   │   │   └── vintages/
+│   │   │       ├── 2024-02.yaml
+│   │   │       ├── 2024-06.yaml
+│   │   │       └── 2024-11.yaml
+│   │   └── custom/
+│   │       └── high_inflation.yaml
+│   │
+│   └── microdata/
+│       └── cps/
+│           └── vintages/
+│               ├── 2024-03/
+│               │   ├── manifest.yaml
+│               │   └── enhanced.parquet
+│               ├── 2024-06/
+│               │   ├── manifest.yaml
+│               │   └── enhanced.parquet
+│               └── latest -> 2024-06/
+│
+└── simulations/
+    └── 2024_q2_eitc_expansion/
+        ├── manifest.yaml               # Full reproducibility record
+        ├── reform.yaml
+        └── results/
+            ├── summary.json
+            └── distributional.parquet
 ```
 
 ---
