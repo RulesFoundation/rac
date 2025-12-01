@@ -2616,6 +2616,120 @@ class CalibrationPerformance:
 
 ---
 
+## 18. Business Model: Open Source Code, Paid Data Services
+
+### 18.1 Core Principle
+
+**100% of code is open source. Paid services are for data and compute.**
+
+Anyone can clone our repos and run everything themselves. We charge when they use our infrastructure.
+
+### 18.2 What's Open Source (Apache 2.0)
+
+Everything in git is free forever:
+
+| Repository | Contents |
+|------------|----------|
+| `cosilico-engine` | Rules DSL, compiler, runtime |
+| `cosilico-us` | US federal + state rules and parameters |
+| `cosilico-uk` | UK rules and parameters |
+| `cosilico-data-pipelines` | Microdata processing, calibration, imputation |
+| `cosilico-archives` | Document archival scripts and tooling |
+| `cosilico-api` | API server code |
+
+Users can:
+- Fork and modify anything
+- Run microdata pipelines with their own Census API keys
+- Archive documents to their own storage
+- Host their own API
+- Use in commercial products without restriction
+
+### 18.3 What's Paid (Our Infrastructure)
+
+When users call `api.cosilico.ai`, they pay for:
+
+| Service | Cost Driver | Why Paid |
+|---------|-------------|----------|
+| API calls | Compute | Server costs |
+| Microdata access | Storage + bandwidth | Terabytes of processed data |
+| Document downloads | Bandwidth | PDFs, archived sources |
+| Large microsimulations | Compute | Census-scale processing |
+| Historical vintages | Storage | Years of versioned data |
+
+### 18.4 Pricing Tiers
+
+```yaml
+free:
+  description: "Core mission - calculations accessible to all"
+  includes:
+    - Single-household calculations (unlimited)
+    - Parameter lookups
+    - Rules inspection
+    - Document metadata (not downloads)
+    - Small microsimulations (≤1,000 households)
+  rate_limit: 1,000 requests/day
+
+pro:
+  price: $X/month
+  description: "For researchers and small organizations"
+  includes:
+    - Everything in Free
+    - Document downloads
+    - Full-text document search
+    - Medium microsimulations (≤100,000 households)
+    - Historical vintage access
+  rate_limit: 50,000 requests/day
+
+enterprise:
+  price: Custom
+  description: "For large organizations and production systems"
+  includes:
+    - Everything in Pro
+    - Full microdata access
+    - Census-scale microsimulations
+    - Dedicated compute
+    - SLA guarantees
+    - Custom jurisdictions
+    - Priority support
+  rate_limit: Unlimited
+```
+
+### 18.5 The Value Proposition
+
+"Yes, you *could* run this yourself. But do you want to?"
+
+Self-hosting requires:
+- Processing CPS, ACS, SCF, PUF microdata (months of work)
+- Running calibration against IRS SOI targets
+- Archiving documents across 50 states
+- Maintaining forecast vintages
+- Petabytes of storage
+- DevOps for high-availability API
+
+Or just call our API.
+
+### 18.6 Precedents
+
+This model works well for:
+
+| Company | Open Source | Paid Service |
+|---------|-------------|--------------|
+| GitLab | GitLab CE | GitLab.com |
+| Elasticsearch | Elasticsearch | Elastic Cloud |
+| PostHog | PostHog | PostHog Cloud |
+| Hugging Face | Transformers | Inference API |
+| Supabase | Supabase | Supabase Cloud |
+
+### 18.7 Why This Works for Cosilico
+
+1. **Mission alignment** - Core rules engine free means maximum policy impact
+2. **Moat is data** - Rules are easy to copy; calibrated microdata is not
+3. **Enterprise trust** - Apache 2.0 removes license objections
+4. **Community contributions** - Open rules means more eyes on correctness
+5. **Sustainable revenue** - Data services fund continued development
+
+---
+
 ## Appendix A: Comparison with OpenFisca
 
 | Aspect | OpenFisca | Cosilico |
