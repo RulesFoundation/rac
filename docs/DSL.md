@@ -1665,7 +1665,255 @@ Every calculation includes full provenance:
 }
 ```
 
-### 7.11 Directory Structure
+### 7.11 Document Archival
+
+Government sources disappear. Websites restructure, PDFs get removed, links rot. Every citation must be backed by an archived copy.
+
+> **Prior art:** See [PolicyEngine/atlas](https://github.com/PolicyEngine/atlas) for an example of policy document archival.
+
+**The problem:**
+
+```yaml
+# This link will break eventually
+reference: "https://www.irs.gov/pub/irs-pdf/p596.pdf"
+
+# This CBO report URL changed when they redesigned their site
+reference: "https://www.cbo.gov/publication/57061"
+
+# State agency sites are especially unstable
+reference: "https://www.dss.ca.gov/cdssweb/entres/forms/English/pub100.pdf"
+```
+
+**Solution: Archive all source documents**
+
+```
+archives/
+├── index.yaml                    # Master index of all archived documents
+├── us/
+│   ├── federal/
+│   │   ├── usc/                 # US Code sections
+│   │   │   ├── 26-32.md         # IRC § 32 (EITC)
+│   │   │   └── 26-32.meta.yaml  # Metadata
+│   │   ├── irs/
+│   │   │   ├── pub-596-2024.pdf       # IRS Publication 596
+│   │   │   ├── pub-596-2024.meta.yaml
+│   │   │   ├── rev-proc-2023-34.pdf   # Revenue Procedure
+│   │   │   └── rev-proc-2023-34.meta.yaml
+│   │   └── cbo/
+│   │       ├── budget-outlook-2024-02.pdf
+│   │       └── budget-outlook-2024-02.meta.yaml
+│   └── states/
+│       └── ca/
+│           ├── ftb/
+│           │   ├── form-3514-2024.pdf
+│           │   └── form-3514-2024.meta.yaml
+│           └── dss/
+│               └── pub-100.pdf
+└── uk/
+    ├── legislation/
+    │   ├── welfare-reform-act-2012.md
+    │   └── welfare-reform-act-2012.meta.yaml
+    └── hmrc/
+        └── rates-thresholds-2024-25.pdf
+```
+
+**Document metadata:**
+
+```yaml
+# archives/us/federal/irs/pub-596-2024.meta.yaml
+
+document:
+  id: irs-pub-596-2024
+  title: "Publication 596: Earned Income Credit (EIC)"
+  type: publication
+
+source:
+  agency: IRS
+  jurisdiction: us.federal
+
+  # Original URL (may be dead)
+  original_url: "https://www.irs.gov/pub/irs-pdf/p596.pdf"
+
+  # Permanent archives
+  archives:
+    - type: wayback
+      url: "https://web.archive.org/web/20240115/https://www.irs.gov/pub/irs-pdf/p596.pdf"
+      archived_date: 2024-01-15
+    - type: local
+      path: "archives/us/federal/irs/pub-596-2024.pdf"
+      checksum: sha256:abc123...
+    - type: perma_cc
+      url: "https://perma.cc/ABC1-23XY"
+      archived_date: 2024-01-20
+
+dates:
+  published: 2024-01-10
+  effective: 2024-01-01
+  expires: 2024-12-31
+  archived: 2024-01-15
+
+supersedes: irs-pub-596-2023
+superseded_by: null  # Updated when 2025 version released
+
+content:
+  format: pdf
+  pages: 52
+  language: en
+
+  # Extracted text for searchability
+  text_extracted: true
+  text_path: "archives/us/federal/irs/pub-596-2024.txt"
+
+  # Key sections referenced by rules
+  sections:
+    - id: worksheet-a
+      title: "EIC Worksheet A"
+      pages: [23, 24]
+      referenced_by:
+        - us.federal.irs.credits.eitc
+    - id: table-1
+      title: "Earned Income Credit Table"
+      pages: [30-48]
+
+# What rules cite this document
+cited_by:
+  - rule: us.federal.irs.credits.eitc
+    sections: [worksheet-a, table-1]
+  - parameter: gov.irs.eitc.max_amount
+    sections: [worksheet-a]
+```
+
+**Reference format in rules:**
+
+```yaml
+# parameters.yaml
+gov.irs.eitc.max_amount:
+  reference:
+    citation: "26 USC § 32(b)(2)"
+    archive: usc-26-32            # Points to archived document
+
+  published:
+    2024-01-01:
+      values: {0: 632, 1: 4213, 2: 6960, 3: 7830}
+      reference:
+        citation: "Rev. Proc. 2023-34, Section 3.07"
+        archive: rev-proc-2023-34  # Points to archived PDF
+        page: 7
+```
+
+```cosilico
+# In DSL - reference includes archive pointer
+variable eitc {
+  reference {
+    citation: "26 USC § 32"
+    archive: usc-26-32
+  }
+  # ...
+}
+```
+
+**Archive CLI:**
+
+```bash
+# Archive a new document
+cosilico archive add https://www.irs.gov/pub/irs-pdf/p596.pdf \
+  --id irs-pub-596-2024 \
+  --title "Publication 596: Earned Income Credit" \
+  --agency irs \
+  --effective 2024-01-01
+
+# Archive to Wayback Machine and Perma.cc
+cosilico archive snapshot https://www.irs.gov/pub/irs-pdf/p596.pdf
+
+# Check for broken links
+cosilico archive check
+
+# Find documents that need updating (new year published)
+cosilico archive outdated
+
+# Verify all references have valid archives
+cosilico archive verify
+
+# Search archived documents
+cosilico archive search "phase-in rate"
+```
+
+**Automated archival pipeline:**
+
+```yaml
+# .github/workflows/archive.yml
+
+name: Archive Documents
+on:
+  schedule:
+    - cron: '0 6 * * *'  # Daily at 6am UTC
+  workflow_dispatch:
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for broken links
+        run: cosilico archive check --output broken-links.json
+
+      - name: Archive broken links via Wayback
+        run: |
+          for url in $(jq -r '.broken[].original_url' broken-links.json); do
+            cosilico archive snapshot "$url" --wayback
+          done
+
+      - name: Check for new IRS publications
+        run: cosilico archive fetch-new --source irs
+
+      - name: Check for new CBO reports
+        run: cosilico archive fetch-new --source cbo
+
+      - name: Commit new archives
+        run: |
+          git add archives/
+          git commit -m "Archive: $(date +%Y-%m-%d) document updates" || true
+          git push
+```
+
+**Versioned statute tracking:**
+
+For statutes that change over time, archive each version:
+
+```yaml
+# archives/us/federal/usc/26-32.meta.yaml
+
+document:
+  id: usc-26-32
+  title: "26 USC § 32 - Earned income"
+  type: statute
+
+versions:
+  - effective: 2018-01-01
+    archive: usc-26-32-tcja.md
+    amended_by: "Pub.L. 115-97 (TCJA)"
+    checksum: sha256:abc123...
+
+  - effective: 2021-03-11
+    archive: usc-26-32-arpa.md
+    amended_by: "Pub.L. 117-2 (ARPA) - temporary 2021 expansion"
+    checksum: sha256:def456...
+
+  - effective: 2022-01-01
+    archive: usc-26-32-current.md
+    amended_by: "Reversion to pre-ARPA"
+    checksum: sha256:ghi789...
+
+# Track pending legislation that would amend this section
+pending_amendments:
+  - bill: "H.R. 1234"
+    title: "Working Families Tax Relief Act"
+    status: "Passed House, pending Senate"
+    would_amend: [subsection_b, subsection_c]
+```
+
+### 7.12 Directory Structure
 
 ```
 cosilico/
@@ -1702,6 +1950,19 @@ cosilico/
 │               │   ├── manifest.yaml
 │               │   └── enhanced.parquet
 │               └── latest -> 2024-06/
+│
+├── archives/                            # Archived source documents
+│   ├── index.yaml                       # Master index
+│   ├── us/
+│   │   ├── federal/
+│   │   │   ├── usc/                    # US Code sections
+│   │   │   ├── irs/                    # IRS publications, forms
+│   │   │   └── cbo/                    # CBO reports
+│   │   └── states/
+│   │       └── ca/                     # California sources
+│   └── uk/
+│       ├── legislation/                # UK statutes
+│       └── hmrc/                       # HMRC guidance
 │
 └── simulations/
     └── 2024_q2_eitc_expansion/
