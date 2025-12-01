@@ -1060,59 +1060,233 @@ gov.irs.income.brackets.single:
   description: Income tax bracket thresholds for single filers
   unit: USD
 
-  # Tier 1: Statutory basis (for calculating projections)
+  # Statutory basis changes over time - uprating method is itself time-varying
   statute:
-    reference: "26 USC § 1(j)(2)"
-    enacted: "Tax Cuts and Jobs Act of 2017, Pub.L. 115-97 § 11001"
-    base_year: 2018
-    base_values: [9525, 38700, 82500, 157500, 200000, 500000]
-    inflation_index: cpi_u
-    rounding: -50  # Round down to nearest $50
+    # Pre-TCJA: CPI-U
+    - effective: 1993-01-01
+      expires: 2017-12-31
+      reference: "26 USC § 1(f)(3) (pre-TCJA)"
+      base_year: 1993
+      base_values: [22100, 53500, 115000, 250000]  # 1993 values
+      inflation_index: cpi_u
+      rounding: -50
 
-  # Tier 2: Official published values (authoritative)
+    # TCJA changed to Chained CPI and reset base year
+    - effective: 2018-01-01
+      expires: 2025-12-31  # TCJA sunsets
+      reference: "26 USC § 1(j)(2), as amended by Pub.L. 115-97 § 11001"
+      enacted: "Tax Cuts and Jobs Act of 2017"
+      base_year: 2018
+      base_values: [9525, 38700, 82500, 157500, 200000, 500000]
+      inflation_index: chained_cpi  # TCJA switched from CPI-U
+      rounding: -50
+
+    # Post-TCJA sunset: reverts to pre-TCJA rules (unless extended)
+    - effective: 2026-01-01
+      reference: "26 USC § 1(f)(3) (post-sunset)"
+      note: "TCJA provisions sunset; reverts to CPI-U unless Congress acts"
+      base_year: 2026
+      base_values: null  # Must be calculated from 2025 + reversion rules
+      inflation_index: cpi_u  # Reverts to CPI-U
+      rounding: -50
+      sunset_of: "Pub.L. 115-97 § 11001"
+
+  # Official published values (authoritative)
   published:
+    2017-01-01:
+      values: [9325, 37950, 91900, 191650, 416700, 418400]
+      reference: "Rev. Proc. 2016-55"
+      inflation_index_used: cpi_u  # Last year of CPI-U
     2018-01-01:
       values: [9525, 38700, 82500, 157500, 200000, 500000]
       reference: "Rev. Proc. 2017-58"
-      published_date: 2017-10-19
+      inflation_index_used: chained_cpi  # First year of C-CPI-U
     2019-01-01:
       values: [9700, 39475, 84200, 160725, 204100, 510300]
       reference: "Rev. Proc. 2018-57"
-      published_date: 2018-11-15
+      inflation_index_used: chained_cpi
     # ...
     2024-01-01:
       values: [11600, 47150, 100525, 191950, 243725, 609350]
       reference: "Rev. Proc. 2023-34"
-      published_date: 2023-11-09
+      inflation_index_used: chained_cpi
 
-  # Tier 3: Our projections (vintaged)
+  # Our projections (vintaged)
   projected:
-    2024-02:  # February 2024 projection vintage
+    2024-06:
       method: statutory_inflation
-      forecast_provider: cbo
-      forecast_vintage: 2024-02
+      # Projection uses the inflation index that's statutory for that period
       values:
-        2025-01-01: [11850, 48200, 102800, 196200, 249300, 623250]
-        2026-01-01: [12100, 49250, 105100, 200500, 254800, 637000]
-
-    2024-06:  # June 2024 projection vintage
-      method: statutory_inflation
-      forecast_provider: cbo
-      forecast_vintage: 2024-06
-      values:
-        2025-01-01: [11925, 48475, 103350, 197300, 250525, 626350]
-        2026-01-01: [12175, 49500, 105550, 201500, 255950, 639900]
-
-    2024-11:  # November 2024 projection vintage (latest)
-      method: statutory_inflation
-      forecast_provider: cbo
-      forecast_vintage: 2024-11
-      values:
-        2025-01-01: [11975, 48650, 103725, 198050, 251525, 628850]
-        2026-01-01: [12250, 49750, 106050, 202250, 257075, 642700]
+        2025-01-01:
+          values: [11925, 48475, 103350, 197300, 250525, 626350]
+          inflation_index_used: chained_cpi
+          forecast_provider: cbo
+          forecast_vintage: 2024-06
+        # Post-sunset projections need both scenarios
+        2026-01-01:
+          scenarios:
+            tcja_extended:
+              values: [12175, 49500, 105550, 201500, 255950, 639900]
+              inflation_index_used: chained_cpi
+              assumption: "TCJA extended"
+            tcja_sunset:
+              values: [14200, 57800, 123200, 235500, 299200, 747900]
+              inflation_index_used: cpi_u
+              assumption: "TCJA sunsets, reverts to pre-TCJA structure"
 ```
 
-### 7.4 Economic Indices and Forecasts
+### 7.4 Time-Varying Indexation Rules
+
+The inflation index used for indexation is itself a statutory parameter that changes over time.
+
+> **Terminology:** US calls this "indexing" or "indexation"; UK calls it "uprating". We use "indexation" as the general term.
+
+```yaml
+# data/indexation/us_federal_tax.yaml
+
+indexation_rules:
+  description: Which inflation index applies to federal tax parameters
+  reference: "26 USC § 1(f)"
+
+  history:
+    - effective: 1981-01-01
+      expires: 2017-12-31
+      index: cpi_u
+      reference: "Economic Recovery Tax Act of 1981"
+      description: "CPI-U (all urban consumers)"
+
+    - effective: 2018-01-01
+      expires: 2025-12-31
+      index: chained_cpi
+      reference: "Tax Cuts and Jobs Act of 2017, § 11002"
+      description: "Chained CPI-U (C-CPI-U), ~0.25% lower annually"
+      note: "Estimated to raise $134B over 10 years via slower bracket growth"
+
+    - effective: 2026-01-01
+      index: cpi_u  # Reverts unless Congress acts
+      reference: "TCJA sunset provision"
+      contingent_on: "tcja_extension"
+      alternatives:
+        tcja_extended:
+          index: chained_cpi
+        tcja_sunset:
+          index: cpi_u
+
+# Different programs use different indices
+programs:
+  income_tax_brackets:
+    index_rule: indexation_rules
+
+  standard_deduction:
+    index_rule: indexation_rules
+
+  eitc_parameters:
+    index_rule: indexation_rules
+
+  social_security_benefits:
+    # SSA uses different index entirely
+    index: cpi_w  # CPI for Urban Wage Earners
+    reference: "42 USC § 415(i)"
+
+  snap_thresholds:
+    # SNAP uses poverty guidelines which have their own indexation
+    index: poverty_guidelines
+    reference: "7 USC § 2014(c)"
+```
+
+**UK example - different indices for different purposes:**
+
+```yaml
+# data/indexation/uk_benefits.yaml
+
+indexation_rules:
+  description: UK benefit uprating rules
+  reference: "Social Security Administration Act 1992, s.150"
+
+  # Most benefits use CPI since 2011 (was RPI before)
+  default:
+    - effective: 1987-04-01
+      expires: 2011-04-05
+      index: rpi
+      reference: "Retail Prices Index"
+
+    - effective: 2011-04-06
+      index: cpi
+      reference: "Consumer Prices Index"
+      note: "Coalition switched from RPI to CPI, reducing uprating ~1% annually"
+
+programs:
+  # State pension has triple lock (highest of: CPI, earnings, 2.5%)
+  state_pension:
+    index: triple_lock
+    reference: "Pensions Act 2014, s.9"
+    components:
+      - cpi
+      - average_earnings
+      - fixed: 0.025
+
+  # Universal Credit uses CPI
+  universal_credit:
+    index: cpi
+    reference: "Welfare Reform Act 2012"
+
+  # Student loan thresholds use RPI (different from benefits)
+  student_loan_threshold:
+    index: rpi
+    reference: "Education (Student Loans) Regulations"
+    note: "Plan 2 threshold frozen 2021-2025 despite RPI increases"
+    overrides:
+      2021-04-01:
+        freeze: true
+        expires: 2025-03-31
+```
+
+**Why this matters:**
+
+| Index | 2018-2024 Growth | Effect |
+|-------|------------------|--------|
+| CPI-U | +27.3% | Higher brackets |
+| Chained CPI | +24.8% | Lower brackets = more tax |
+| UK RPI | +32.1% | Higher thresholds |
+| UK CPI | +26.8% | Lower thresholds |
+
+The TCJA switch to chained CPI means brackets grow ~0.25% slower annually, resulting in real bracket creep and higher effective taxes over time. Similarly, the UK's 2011 switch from RPI to CPI for benefits reduced their real value.
+
+**Engine calculation:**
+
+```cosilico
+variable projected_bracket {
+  formula {
+    let base = parameter(gov.irs.income.brackets.single, tier: statute)
+    let base_year = base.base_year
+
+    # Get the applicable indexation rule for this period
+    let indexation = indexation_rule(gov.irs.income.brackets, period)
+
+    # indexation.index is time-varying: cpi_u pre-2018, chained_cpi 2018-2025
+    let inflation_factor = index(indexation.index).factor(from: base_year, to: period)
+
+    return round(base.values * inflation_factor, indexation.rounding)
+  }
+}
+```
+
+**Handling sunset uncertainty:**
+
+```bash
+# Default: assume current law (TCJA sunsets in 2026)
+cosilico sim reform.yaml --year 2027
+
+# Assume TCJA extended
+cosilico sim reform.yaml --year 2027 --assume tcja_extended
+
+# Compare scenarios
+cosilico compare reform.yaml --year 2027 \
+  --scenario-a "current_law" \
+  --scenario-b "tcja_extended"
+```
+
+### 7.5 Economic Indices and Forecasts
 
 Indices separate actuals from forecasts, with forecast vintages tracked:
 
@@ -1187,7 +1361,7 @@ cpi_u:
           2026: 3.5
 ```
 
-### 7.5 Microdata Versioning
+### 7.6 Microdata Versioning
 
 Microdata vintages capture the complete state of survey data:
 
@@ -1305,7 +1479,7 @@ reproducibility:
   random_seed: 42
 ```
 
-### 7.6 Simulation Manifests
+### 7.7 Simulation Manifests
 
 Every simulation produces a manifest for complete reproducibility:
 
@@ -1378,7 +1552,7 @@ outputs:
   audit_log: results/audit.jsonl
 ```
 
-### 7.7 DSL Access to Versioned Data
+### 7.8 DSL Access to Versioned Data
 
 ```cosilico
 # Default: latest knowledge date, uses precedence rules
@@ -1408,7 +1582,7 @@ let cpi = index(cpi_u, forecast_provider: cbo)
 let cpi_high = index(cpi_u, forecast_provider: custom.high_inflation)
 ```
 
-### 7.8 CLI Commands
+### 7.9 CLI Commands
 
 ```bash
 # Run with current knowledge (default)
@@ -1448,7 +1622,7 @@ cosilico vintages --forecasts cbo
 cosilico vintages --parameters gov.irs.income.brackets
 ```
 
-### 7.9 Audit Trail
+### 7.10 Audit Trail
 
 Every calculation includes full provenance:
 
@@ -1491,7 +1665,7 @@ Every calculation includes full provenance:
 }
 ```
 
-### 7.10 Directory Structure
+### 7.11 Directory Structure
 
 ```
 cosilico/
