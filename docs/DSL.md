@@ -1671,6 +1671,79 @@ Government sources disappear. Websites restructure, PDFs get removed, links rot.
 
 > **Vision:** Inspired by [PolicyEngine/atlas](https://github.com/PolicyEngine/atlas) proposal - document archival and knowledge graphs should be first-class API features, not afterthoughts.
 
+#### Tiered Archival Strategy
+
+Not all sources are equal. We prioritize based on computational law needs:
+
+**Tier 1: Statutes (comprehensive)**
+```
+Goal: Archive ALL federal and state statutory law
+- US Code (all 54 titles)
+- State codes (50 states + DC + territories)
+- This is the foundation - finite, tractable, essential
+
+Sources:
+- Federal: GovInfo XML, Cornell LII
+- States: Individual legislature sites (quality varies)
+
+Why comprehensive: Statutes cross-reference extensively. EITC references
+AGI, which references dozens of IRC sections. Selective archival creates
+broken cross-references. Archive everything.
+```
+
+**Tier 2: Program Documents (as encoded)**
+```
+Goal: Archive documents for programs we implement
+- IRS Publications (596, 17, etc.) - how to apply tax law
+- State tax forms and instructions
+- Agency manuals (SNAP handbook, SSA POMS)
+- Benefits eligibility guides
+
+These are MORE useful than regulations for implementation - they tell you
+how to actually calculate, step by step.
+
+Growth: Expands as we add program coverage
+```
+
+**Tier 3: Regulations (selective)**
+```
+Goal: Archive CFR/state regs we actually cite
+- 26 CFR (IRS regs) - sections we reference
+- 7 CFR 273 (SNAP regs) - when encoding SNAP
+- State administrative codes as needed
+
+Lower priority because:
+- Often just restates statute in more words
+- Program documents are more actionable
+- Much larger corpus with less marginal value
+
+Exception: Some programs are primarily regulatory (not statutory)
+```
+
+**Open Source Opportunity:**
+
+No good open source alternative to Cornell LII exists for statutes + state codes + API access. We're building this infrastructure for our rules engine anyway. By open-sourcing the archive:
+
+- Public good (legal information should be free)
+- Others build on it (legal tech, policy orgs, researchers)
+- Network effects (contributions improve coverage)
+- Our business is the calculation engine, not the archive
+
+```
+cosilico/lawarchive     # Separate repo, fully open
+├── federal/
+│   ├── usc/           # All 54 titles
+│   └── cfr/           # Selective, as needed
+├── states/
+│   ├── ca/
+│   ├── tx/
+│   └── ...
+└── tools/
+    ├── scraper/       # Fetch from official sources
+    ├── parser/        # Convert to machine-readable
+    └── api/           # Serve via REST
+```
+
 **The problem:**
 
 ```yaml
