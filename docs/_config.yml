@@ -1,6 +1,7 @@
 # Book settings
 title: Cosilico Engine Documentation
 author: Cosilico
+logo: logo.svg
 copyright: "2024"
 
 # Build settings
@@ -9,6 +10,7 @@ execute:
 
 # HTML settings
 html:
+  favicon: favicon.svg
   use_repository_button: true
   use_issues_button: true
   use_edit_page_button: true
