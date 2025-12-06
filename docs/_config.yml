@@ -16,15 +16,24 @@ html:
   use_edit_page_button: true
   home_page_in_navbar: false
   baseurl: https://docs.cosilico.ai
+  extra_footer: ""
 
 # Repository settings
 repository:
-  url: https://github.com/PolicyEngine/cosilico-engine
+  url: https://github.com/CosilicoAI/cosilico-engine
   path_to_book: docs
   branch: main
 
 # Sphinx settings
 sphinx:
   config:
+    html_static_path:
+      - _static
     html_theme_options:
       navigation_with_keys: false
+      logo:
+        link: https://cosilico.ai
+      primary_sidebar_end: []
+      secondary_sidebar_items: []
+    html_css_files:
+      - custom.css
