@@ -69,7 +69,7 @@ class CodeGenerator:
 
     def __init__(
         self,
-        model: str = "claude-sonnet-4-20250514",
+        model: str = "claude-opus-4-5-20251101",
         api_key: str | None = None,
     ):
         self.model = model

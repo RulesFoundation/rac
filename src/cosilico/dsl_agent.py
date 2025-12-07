@@ -1,11 +1,7 @@
-"""Agentic training loop using Anthropic SDK with tool use.
+"""Agentic training loop for Cosilico DSL generation.
 
-This implements a closed-loop system where Claude:
-1. Reads statutory text
-2. Generates Cosilico DSL code
-3. Executes it against test cases (via tool)
-4. Gets structured feedback
-5. Iterates until accuracy threshold is met
+This is the DSL-native version of the agent that generates proper
+Cosilico DSL code instead of Python functions.
 """
 
 import json
@@ -14,8 +10,7 @@ from typing import Any
 
 import anthropic
 
-from .executor import Executor
-from .oracles import MockOracle
+from .dsl_executor import DSLExecutor, get_default_parameters
 from .scorer import FailureDiagnoser, Scorer
 from .types import GeneratedCode, Statute, TestCase
 
@@ -71,8 +66,132 @@ Include the final code and a brief explanation of the implementation.""",
 ]
 
 
-class AgentTrainingLoop:
-    """Agentic training loop using Claude with tools."""
+DSL_SYSTEM_PROMPT = """You are an expert tax law encoder. Your task is to convert statutory text into Cosilico DSL code.
+
+## Cosilico DSL Overview
+
+Cosilico DSL is a purpose-built language for encoding tax and benefit rules. It's designed to be:
+- **Safe**: Pure functional, no side effects
+- **Traceable**: Every rule links to legal citations
+- **AI-native**: Structured grammar that's easy to generate correctly
+
+## DSL Syntax
+
+### Variable Definition
+
+```cosilico
+variable <name> {
+  entity <EntityType>           # Person, TaxUnit, Household
+  period <PeriodType>           # Year, Month
+  dtype <DataType>              # Money, Rate, Count, Bool
+  reference "<legal citation>"  # Required - cite the statute
+
+  formula {
+    let <var> = <expression>
+    return <expression>
+  }
+}
+```
+
+### Available Data Types
+- `Money` - Currency amounts (e.g., $1234.56)
+- `Rate` - Decimal rates (e.g., 0.0765)
+- `Count` - Non-negative integers
+- `Bool` - true/false
+
+### Expressions
+
+**Arithmetic:** `+`, `-`, `*`, `/`
+**Comparison:** `==`, `!=`, `<`, `>`, `<=`, `>=`
+**Logical:** `and`, `or`, `not`
+**Functions:** `min(a, b)`, `max(a, b)`, `abs(x)`, `clamp(x, lo, hi)`
+
+**Conditionals:**
+```cosilico
+if condition then value_if_true else value_if_false
+
+match {
+  case condition1 => value1
+  case condition2 => value2
+  else => default_value
+}
+```
+
+### Variable References
+
+```cosilico
+variable(earned_income)                    # Reference another variable
+parameter(gov.irs.eitc.phase_in_rate)     # Reference a parameter
+parameter(gov.irs.eitc.rate[n_children])  # Indexed parameter
+```
+
+### Input Variables
+
+These variables are provided as inputs (no formula needed):
+- `earned_income` - Employment/self-employment income
+- `n_qualifying_children` or `n_children` - Number of qualifying children
+- `filing_status` - SINGLE, JOINT, HEAD_OF_HOUSEHOLD, MARRIED_FILING_SEPARATELY
+- `agi` or `adjusted_gross_income` - Adjusted gross income
+- Other inputs as specified in test cases
+
+## Example: EITC Phase-In Credit
+
+```cosilico
+module us.federal.irs.credits.eitc
+version "2024.1"
+jurisdiction us
+
+variable eitc_phase_in {
+  entity TaxUnit
+  period Year
+  dtype Money
+  reference "26 USC § 32(a)(1)"
+
+  formula {
+    let earned = variable(earned_income)
+    let n_children = variable(n_qualifying_children)
+
+    # Phase-in rates by number of children (2024)
+    let rate = match {
+      case n_children == 0 => 0.0765
+      case n_children == 1 => 0.34
+      case n_children == 2 => 0.40
+      else => 0.45
+    }
+
+    # Earned income amounts (caps)
+    let cap = match {
+      case n_children == 0 => 7840
+      case n_children == 1 => 11750
+      else => 16510
+    }
+
+    return min(earned, cap) * rate
+  }
+}
+```
+
+## Important Rules
+
+1. **Always include metadata**: module, entity, period, dtype, reference
+2. **Reference inputs correctly**: Use `variable(input_name)` for inputs
+3. **Use match expressions** for multi-way conditionals
+4. **Cite the statute** in the reference field
+5. **Return the computed value** at the end of the formula
+
+## Your Task
+
+1. Read the statutory text carefully
+2. Generate Cosilico DSL code that implements it
+3. Use the `execute_dsl` tool to test your implementation
+4. Analyze failures and adjust rates/thresholds/logic
+5. When you reach 95%+ accuracy, use `submit_final_code`
+
+Be precise with parameters - small errors in rates or thresholds cause test failures."""
+
+
+class DSLAgentTrainingLoop:
+    """Agentic training loop for DSL generation."""
 
     def __init__(
         self,
@@ -80,14 +199,15 @@ class AgentTrainingLoop:
         max_iterations: int = 10,
         target_accuracy: float = 0.95,
         api_key: str | None = None,
+        parameters: dict | None = None,
     ):
         self.model = model
         self.max_iterations = max_iterations
         self.target_accuracy = target_accuracy
         self.client = anthropic.Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
 
-        # Execution components
-        self.executor = Executor()
+        # Execution components - use DSL executor
+        self.executor = DSLExecutor(parameters=parameters or get_default_parameters())
         self.scorer = Scorer()
         self.diagnoser = FailureDiagnoser()
 
@@ -101,19 +221,12 @@ class AgentTrainingLoop:
         self.total_input_tokens = 0
         self.total_output_tokens = 0
 
-        # Trajectory logging - captures the full RL loop
+        # Trajectory logging
         self.trajectory: list[dict] = []
-
-        # Full conversation log for visualization
         self.conversation_log: list[dict] = []
 
     def get_cost_estimate(self) -> dict:
-        """Estimate API cost based on token usage.
-
-        Pricing (as of Dec 2024):
-        - Claude Sonnet: $3/M input, $15/M output
-        - Claude Opus: $15/M input, $75/M output
-        """
+        """Estimate API cost based on token usage."""
         if "opus" in self.model.lower():
             input_rate = 15.0 / 1_000_000
             output_rate = 75.0 / 1_000_000
@@ -135,77 +248,32 @@ class AgentTrainingLoop:
             "model": self.model
         }
 
-    def _build_system_prompt(self) -> str:
-        return """You are an expert tax law encoder. Your task is to convert statutory text into executable Python code.
-
-## Output Format
-
-Generate a Python function that takes a dictionary of inputs and returns a dictionary with the calculated value.
-
-```python
-def calculate(inputs: dict) -> dict:
-    # Extract inputs
-    earned_income = inputs.get("earned_income", 0)
-    n_children = inputs.get("n_qualifying_children", inputs.get("n_children", 0))
-    filing_status = inputs.get("filing_status", "SINGLE")
-
-    # Parameters (hardcode from statute/IRS tables)
-    # ...
-
-    # Calculate
-    result = ...
-
-    return {"variable_name": result}
-```
-
-## Important Rules
-
-1. Always return a dict with a single key matching the expected output variable
-2. Use inputs.get() with defaults to safely access input values
-3. Hardcode parameter values from the statute (rates, thresholds, etc.)
-4. Handle all filing statuses if relevant: "SINGLE", "JOINT", "MARRIED_FILING_SEPARATELY", "HEAD_OF_HOUSEHOLD"
-5. Use standard Python: min(), max(), if/else, etc.
-
-## Example - EITC Phase-In
-
-```python
-def calculate(inputs: dict) -> dict:
-    earned_income = inputs.get("earned_income", 0)
-    n_children = inputs.get("n_qualifying_children", inputs.get("n_children", 0))
-
-    # 2024 parameters by number of qualifying children
-    params = {
-        0: {"rate": 0.0765, "earned_income_amount": 7840},
-        1: {"rate": 0.34, "earned_income_amount": 11750},
-        2: {"rate": 0.40, "earned_income_amount": 16510},
-        3: {"rate": 0.45, "earned_income_amount": 16510},
-    }
-
-    p = params.get(min(n_children, 3))
-    credit = min(earned_income, p["earned_income_amount"]) * p["rate"]
-
-    return {"eitc_phase_in_credit": credit}
-```
-
-## Your Task
-
-1. Read the statutory text carefully
-2. Generate Python code that implements the rules
-3. Use the execute_dsl tool to test your code (it accepts Python)
-4. Analyze failures and iterate
-5. When you reach 95%+ accuracy, use submit_final_code
-
-Be precise with the formula - small errors in rates or thresholds cause test failures."""
-
     def _build_user_prompt(self, statute: Statute, test_cases: list[TestCase]) -> str:
-        # Show a sample of test cases
+        """Build the user prompt with statute and test cases."""
         sample_cases = test_cases[:5]
-        cases_str = "\n".join([
-            f"- earned_income=${tc.inputs.get('earned_income', 0)}, "
-            f"n_children={tc.inputs.get('n_children', 0)} → "
-            f"expected EITC=${tc.expected.get('eitc', tc.expected.get('eitc_phase_in_credit', 0)):.2f}"
-            for tc in sample_cases
-        ])
+
+        # Format test cases based on available inputs
+        cases_lines = []
+        for tc in sample_cases:
+            parts = []
+            if "earned_income" in tc.inputs:
+                parts.append(f"earned_income=${tc.inputs['earned_income']}")
+            if "n_children" in tc.inputs:
+                parts.append(f"n_children={tc.inputs['n_children']}")
+            elif "n_qualifying_children" in tc.inputs:
+                parts.append(f"n_children={tc.inputs['n_qualifying_children']}")
+            if "filing_status" in tc.inputs:
+                parts.append(f"filing_status={tc.inputs['filing_status']}")
+            if "agi" in tc.inputs:
+                parts.append(f"agi=${tc.inputs['agi']}")
+
+            # Get expected value
+            exp_val = list(tc.expected.values())[0] if tc.expected else 0
+            exp_key = list(tc.expected.keys())[0] if tc.expected else "output"
+
+            cases_lines.append(f"- {', '.join(parts)} → {exp_key}=${exp_val:.2f}")
+
+        cases_str = "\n".join(cases_lines)
 
         return f"""## Statutory Text to Encode
 
@@ -240,15 +308,8 @@ Start by generating your initial DSL code and testing it."""
         """Execute DSL code against test cases."""
         self.iteration += 1
 
-        # Create a GeneratedCode object
-        code = GeneratedCode(
-            source=dsl_code,
-            citation="test",
-            iteration=self.iteration
-        )
-
-        # Execute
-        results = self.executor.execute(code, self.test_cases)
+        # Execute using DSL executor
+        results = self.executor.execute(dsl_code, self.test_cases)
 
         # Score
         score = self.scorer.score(results)
@@ -287,7 +348,7 @@ Start by generating your initial DSL code and testing it."""
             ]
             response["suggestion"] = "Analyze the failures and adjust your formula or parameters."
 
-        # Log to trajectory for RL analysis
+        # Log to trajectory
         self.trajectory.append({
             "iteration": self.iteration,
             "code": dsl_code,
@@ -301,7 +362,6 @@ Start by generating your initial DSL code and testing it."""
                     "message": f.message,
                     "expected": f.expected,
                     "actual": f.actual,
-                    "inputs": f.inputs if hasattr(f, 'inputs') else None
                 }
                 for f in failures
             ],
@@ -312,9 +372,7 @@ Start by generating your initial DSL code and testing it."""
 
     def _submit_final(self, dsl_code: str, explanation: str) -> str:
         """Handle final code submission."""
-        # One final execution to get accurate metrics
-        code = GeneratedCode(source=dsl_code, citation="final", iteration=self.iteration)
-        results = self.executor.execute(code, self.test_cases)
+        results = self.executor.execute(dsl_code, self.test_cases)
         score = self.scorer.score(results)
 
         return json.dumps({
@@ -330,21 +388,13 @@ Start by generating your initial DSL code and testing it."""
         test_cases: list[TestCase],
         verbose: bool = True
     ) -> dict[str, Any]:
-        """Run the agentic training loop.
-
-        Returns dict with:
-        - success: bool
-        - final_code: str
-        - final_accuracy: float
-        - iterations: int
-        - conversation: list of messages
-        """
+        """Run the agentic training loop."""
         self.test_cases = test_cases
         self.iteration = 0
         self.best_code = None
         self.best_accuracy = 0.0
-        self.trajectory = []  # Reset trajectory for new training run
-        self.conversation_log = []  # Reset conversation log
+        self.trajectory = []
+        self.conversation_log = []
 
         # Initialize conversation
         messages = [
@@ -352,19 +402,18 @@ Start by generating your initial DSL code and testing it."""
         ]
 
         if verbose:
-            print(f"Starting agentic training loop for: {statute.citation}")
+            print(f"Starting DSL training loop for: {statute.citation}")
             print(f"Test cases: {len(test_cases)}, Target: {self.target_accuracy:.0%}")
             print("-" * 60)
 
         final_result = None
 
         # Main agentic loop
-        for turn in range(self.max_iterations * 2):  # Allow multiple tool calls per iteration
-            # Call Claude
+        for turn in range(self.max_iterations * 2):
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=4096,
-                system=self._build_system_prompt(),
+                system=DSL_SYSTEM_PROMPT,
                 tools=TOOLS,
                 messages=messages
             )
@@ -377,7 +426,7 @@ Start by generating your initial DSL code and testing it."""
             assistant_content = response.content
             messages.append({"role": "assistant", "content": assistant_content})
 
-            # Log assistant response for visualization
+            # Log assistant response
             assistant_text = ""
             for block in assistant_content:
                 if hasattr(block, "text"):
@@ -394,7 +443,6 @@ Start by generating your initial DSL code and testing it."""
             tool_uses = [block for block in assistant_content if block.type == "tool_use"]
 
             if not tool_uses:
-                # No tool call - Claude is done or needs prompting
                 if verbose:
                     for block in assistant_content:
                         if hasattr(block, "text"):
@@ -409,7 +457,6 @@ Start by generating your initial DSL code and testing it."""
 
                 result = self._handle_tool_call(tool_use.name, tool_use.input)
 
-                # Log tool call for visualization
                 self.conversation_log.append({
                     "turn": turn,
                     "role": "tool_call",
@@ -419,7 +466,6 @@ Start by generating your initial DSL code and testing it."""
                 })
 
                 if verbose:
-                    # Parse and display key info
                     try:
                         result_data = json.loads(result)
                         if "accuracy" in result_data:
@@ -439,7 +485,6 @@ Start by generating your initial DSL code and testing it."""
                     "content": result
                 })
 
-                # Check if this was final submission
                 if tool_use.name == "submit_final_code":
                     final_result = json.loads(result)
                     break
@@ -447,10 +492,8 @@ Start by generating your initial DSL code and testing it."""
             if final_result:
                 break
 
-            # Add tool results to conversation
             messages.append({"role": "user", "content": tool_results})
 
-            # Check iteration limit
             if self.iteration >= self.max_iterations:
                 if verbose:
                     print(f"\nMax iterations ({self.max_iterations}) reached.")
@@ -459,125 +502,13 @@ Start by generating your initial DSL code and testing it."""
         # Build final result
         cost = self.get_cost_estimate()
 
-        if final_result:
-            return {
-                "success": self.best_accuracy >= self.target_accuracy,
-                "final_code": self.best_code,
-                "final_accuracy": self.best_accuracy,
-                "iterations": self.iteration,
-                "submitted": True,
-                "cost": cost,
-                "trajectory": self.trajectory,  # Full RL learning history
-                "conversation": self.conversation_log,  # Full conversation for visualization
-            }
-        else:
-            return {
-                "success": self.best_accuracy >= self.target_accuracy,
-                "final_code": self.best_code,
-                "final_accuracy": self.best_accuracy,
-                "iterations": self.iteration,
-                "submitted": False,
-                "cost": cost,
-                "trajectory": self.trajectory,  # Full RL learning history
-                "conversation": self.conversation_log,  # Full conversation for visualization
-            }
-
-
-def create_eitc_test_cases() -> list[TestCase]:
-    """Create test cases for EITC using mock oracle."""
-    oracle = MockOracle()
-    cases = []
-
-    # Test various income levels and child counts
-    incomes = [0, 1000, 5000, 7840, 10000, 11750, 15000, 16510, 20000]
-    for i, income in enumerate(incomes):
-        for n_children in [0, 1, 2, 3]:
-            inputs = {
-                "earned_income": income,
-                "filing_status": "SINGLE",
-                "n_children": n_children,
-                "n_qualifying_children": n_children,
-            }
-            expected = oracle.evaluate(inputs)
-            cases.append(TestCase(
-                id=f"case_{i}_{n_children}",
-                inputs=inputs,
-                expected=expected,
-            ))
-    return cases
-
-
-# CLI entry point
-def main():
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Cosilico Agentic Training Loop")
-    parser.add_argument("--model", default="claude-opus-4-5-20251101", help="Claude model to use")
-    parser.add_argument("--max-iterations", type=int, default=5, help="Max iterations")
-    parser.add_argument("--target-accuracy", type=float, default=0.95, help="Target accuracy")
-    args = parser.parse_args()
-
-    # Check API key
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        print("ERROR: ANTHROPIC_API_KEY not set")
-        print("Set with: export ANTHROPIC_API_KEY=your_key")
-        return
-
-    # Create statute and test cases
-    statute = Statute(
-        citation="26 USC § 32(a)(1)",
-        text="""
-(a) Allowance of credit
-    (1) In general
-    In the case of an eligible individual, there shall be allowed as a credit
-    against the tax imposed by this subtitle for the taxable year an amount
-    equal to the credit percentage of so much of the taxpayer's earned income
-    for the taxable year as does not exceed the earned income amount.
-        """.strip(),
-        jurisdiction="us",
-    )
-
-    test_cases = create_eitc_test_cases()
-
-    print("=" * 60)
-    print("Cosilico Agentic Training Loop")
-    print("=" * 60)
-    print(f"Model: {args.model}")
-    print(f"Statute: {statute.citation}")
-    print(f"Test cases: {len(test_cases)}")
-    print(f"Target accuracy: {args.target_accuracy:.0%}")
-    print("=" * 60)
-
-    # Run training
-    loop = AgentTrainingLoop(
-        model=args.model,
-        max_iterations=args.max_iterations,
-        target_accuracy=args.target_accuracy,
-    )
-
-    result = loop.train(statute, test_cases, verbose=True)
-
-    print("\n" + "=" * 60)
-    print("FINAL RESULT")
-    print("=" * 60)
-    print(f"Success: {result['success']}")
-    print(f"Final accuracy: {result['final_accuracy']:.1%}")
-    print(f"Iterations: {result['iterations']}")
-    print(f"Submitted: {result['submitted']}")
-
-    # Print cost
-    cost = result.get("cost", {})
-    print(f"\nAPI Usage:")
-    print(f"  Input tokens:  {cost.get('input_tokens', 0):,}")
-    print(f"  Output tokens: {cost.get('output_tokens', 0):,}")
-    print(f"  Total tokens:  {cost.get('total_tokens', 0):,}")
-    print(f"  Estimated cost: ${cost.get('total_cost_usd', 0):.4f}")
-
-    if result["final_code"]:
-        print("\nFinal code:")
-        print("-" * 40)
-        print(result["final_code"])
-
-
-if __name__ == "__main__":
-    main()
+        return {
+            "success": self.best_accuracy >= self.target_accuracy,
+            "final_code": self.best_code,
+            "final_accuracy": self.best_accuracy,
+            "iterations": self.iteration,
+            "submitted": final_result is not None,
+            "cost": cost,
+            "trajectory": self.trajectory,
+            "conversation": self.conversation_log,
+        }

@@ -125,7 +125,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Test agentic loop on full EITC")
-    parser.add_argument("--model", default="claude-sonnet-4-20250514")
+    parser.add_argument("--model", default="claude-opus-4-5-20251101")
     parser.add_argument("--max-iterations", type=int, default=10)
     parser.add_argument("--target-accuracy", type=float, default=0.90)
     args = parser.parse_args()

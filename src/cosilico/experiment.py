@@ -722,7 +722,7 @@ TEST_GENERATORS = {
 
 def run_experiment(
     provision_ids: list[str] | None = None,
-    model: str = "claude-sonnet-4-20250514",
+    model: str = "claude-opus-4-5-20251101",
     max_iterations: int = 10,
     target_accuracy: float = 0.95,
     output_dir: str = "paper/data/runs",
@@ -857,7 +857,7 @@ def main():
     parser = argparse.ArgumentParser(description="Run AI encoding experiments")
     parser.add_argument("--provisions", nargs="+", help="Specific provisions to run")
     parser.add_argument("--phase", type=int, choices=[1, 2, 3], help="Run all provisions from a phase")
-    parser.add_argument("--model", default="claude-sonnet-4-20250514")
+    parser.add_argument("--model", default="claude-opus-4-5-20251101")
     parser.add_argument("--max-iterations", type=int, default=10)
     parser.add_argument("--target-accuracy", type=float, default=0.95)
     parser.add_argument("--output-dir", default="paper/data/runs")

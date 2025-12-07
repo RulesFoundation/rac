@@ -7,7 +7,17 @@ from .types import ExecutionResult, GeneratedCode, TestCase
 
 
 class Executor:
-    """Executes generated code against test cases."""
+    """Executes generated code against test cases.
+
+    Supports three code formats:
+    1. Python functions (def calculate)
+    2. New Cosilico DSL (variable { ... })
+    3. Legacy YAML-like DSL (variable name:)
+    """
+
+    def __init__(self, parameters: dict | None = None):
+        """Initialize with optional parameter values."""
+        self.parameters = parameters
 
     def execute(
         self,
@@ -16,7 +26,7 @@ class Executor:
     ) -> list[ExecutionResult]:
         """Execute code against test cases.
 
-        Supports both Python functions and Cosilico DSL.
+        Supports Python functions, new DSL, and legacy DSL.
         """
         source = code.source.strip()
 
@@ -24,7 +34,11 @@ class Executor:
         if "def calculate" in source:
             return self._execute_python(source, test_cases)
 
-        # Otherwise treat as DSL
+        # Check if this is new Cosilico DSL (has "variable name {")
+        if re.search(r'variable\s+\w+\s*\{', source):
+            return self._execute_new_dsl(source, test_cases)
+
+        # Otherwise treat as legacy DSL
         parsed = self._parse(source)
         if parsed.get("error"):
             return [
@@ -41,6 +55,23 @@ class Executor:
             results.append(result)
 
         return results
+
+    def _execute_new_dsl(
+        self,
+        source: str,
+        test_cases: list[TestCase],
+    ) -> list[ExecutionResult]:
+        """Execute new Cosilico DSL code."""
+        try:
+            from .dsl_executor import DSLExecutor, get_default_parameters
+
+            executor = DSLExecutor(parameters=self.parameters or get_default_parameters())
+            return executor.execute(source, test_cases)
+        except Exception as e:
+            return [
+                ExecutionResult(case_id=tc.id, error=f"DSL execution error: {e}")
+                for tc in test_cases
+            ]
 
     def _execute_python(
         self,

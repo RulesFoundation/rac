@@ -178,7 +178,7 @@ def run_llm_demo():
 
     # Create training loop with real generator
     loop = TrainingLoop(
-        generator=CodeGenerator(model="claude-sonnet-4-20250514"),
+        generator=CodeGenerator(model="claude-opus-4-5-20251101"),
         max_iterations=5,
         target_accuracy=0.95,
     )

@@ -1,0 +1,845 @@
+"""Cosilico DSL Parser.
+
+Parses .cosilico files according to the DSL specification in docs/DSL.md.
+This is a recursive descent parser that produces an AST.
+"""
+
+import re
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Optional
+
+
+class TokenType(Enum):
+    # Keywords
+    MODULE = "module"
+    VERSION = "version"
+    JURISDICTION = "jurisdiction"
+    IMPORT = "import"
+    VARIABLE = "variable"
+    ENUM = "enum"
+    ENTITY = "entity"
+    PERIOD = "period"
+    DTYPE = "dtype"
+    REFERENCE = "reference"
+    LABEL = "label"
+    DESCRIPTION = "description"
+    UNIT = "unit"
+    FORMULA = "formula"
+    DEFINED_FOR = "defined_for"
+    DEFAULT = "default"
+    PRIVATE = "private"
+    INTERNAL = "internal"
+    LET = "let"
+    RETURN = "return"
+    IF = "if"
+    THEN = "then"
+    ELSE = "else"
+    MATCH = "match"
+    CASE = "case"
+    AND = "and"
+    OR = "or"
+    NOT = "not"
+    TRUE = "true"
+    FALSE = "false"
+
+    # Symbols
+    LBRACE = "{"
+    RBRACE = "}"
+    LPAREN = "("
+    RPAREN = ")"
+    LBRACKET = "["
+    RBRACKET = "]"
+    COMMA = ","
+    COLON = ":"
+    DOT = "."
+    EQUALS = "="
+    ARROW = "=>"
+    PLUS = "+"
+    MINUS = "-"
+    STAR = "*"
+    SLASH = "/"
+    PERCENT = "%"
+    LT = "<"
+    GT = ">"
+    LE = "<="
+    GE = ">="
+    EQ = "=="
+    NE = "!="
+
+    # Literals
+    NUMBER = "NUMBER"
+    STRING = "STRING"
+    IDENTIFIER = "IDENTIFIER"
+
+    # Special
+    EOF = "EOF"
+    NEWLINE = "NEWLINE"
+    COMMENT = "COMMENT"
+
+
+@dataclass
+class Token:
+    type: TokenType
+    value: Any
+    line: int
+    column: int
+
+
+@dataclass
+class ModuleDecl:
+    path: str
+
+
+@dataclass
+class VersionDecl:
+    version: str
+
+
+@dataclass
+class JurisdictionDecl:
+    jurisdiction: str
+
+
+@dataclass
+class ImportDecl:
+    module_path: str
+    names: list[str]  # ["*"] for wildcard
+    alias: Optional[str] = None
+
+
+@dataclass
+class LetBinding:
+    name: str
+    value: "Expression"
+
+
+@dataclass
+class VariableRef:
+    name: str
+    period_offset: Optional[int] = None
+
+
+@dataclass
+class ParameterRef:
+    path: str
+    index: Optional[str] = None  # For indexed params like rate[n_children]
+
+
+@dataclass
+class BinaryOp:
+    op: str
+    left: "Expression"
+    right: "Expression"
+
+
+@dataclass
+class UnaryOp:
+    op: str
+    operand: "Expression"
+
+
+@dataclass
+class FunctionCall:
+    name: str
+    args: list["Expression"]
+
+
+@dataclass
+class IfExpr:
+    condition: "Expression"
+    then_branch: "Expression"
+    else_branch: "Expression"
+
+
+@dataclass
+class MatchCase:
+    condition: Optional["Expression"]  # None for else
+    value: "Expression"
+
+
+@dataclass
+class MatchExpr:
+    cases: list[MatchCase]
+
+
+@dataclass
+class Literal:
+    value: Any
+    dtype: str  # "number", "string", "bool"
+
+
+@dataclass
+class Identifier:
+    name: str
+
+
+Expression = (
+    LetBinding | VariableRef | ParameterRef | BinaryOp | UnaryOp |
+    FunctionCall | IfExpr | MatchExpr | Literal | Identifier
+)
+
+
+@dataclass
+class FormulaBlock:
+    bindings: list[LetBinding]
+    return_expr: Expression
+
+
+@dataclass
+class VariableDef:
+    name: str
+    entity: str
+    period: str
+    dtype: str
+    reference: str
+    label: Optional[str] = None
+    description: Optional[str] = None
+    unit: Optional[str] = None
+    formula: Optional[FormulaBlock] = None
+    defined_for: Optional[Expression] = None
+    default: Optional[Any] = None
+    visibility: str = "public"  # "public", "private", "internal"
+
+
+@dataclass
+class EnumDef:
+    name: str
+    values: list[str]
+
+
+@dataclass
+class Module:
+    module_decl: Optional[ModuleDecl] = None
+    version_decl: Optional[VersionDecl] = None
+    jurisdiction_decl: Optional[JurisdictionDecl] = None
+    imports: list[ImportDecl] = field(default_factory=list)
+    variables: list[VariableDef] = field(default_factory=list)
+    enums: list[EnumDef] = field(default_factory=list)
+
+
+class Lexer:
+    """Tokenizer for Cosilico DSL."""
+
+    KEYWORDS = {
+        "module", "version", "jurisdiction", "import", "variable", "enum",
+        "entity", "period", "dtype", "reference", "label", "description",
+        "unit", "formula", "defined_for", "default", "private", "internal",
+        "let", "return", "if", "then", "else", "match", "case",
+        "and", "or", "not", "true", "false",
+    }
+
+    def __init__(self, source: str):
+        self.source = source
+        self.pos = 0
+        self.line = 1
+        self.column = 1
+        self.tokens: list[Token] = []
+
+    def tokenize(self) -> list[Token]:
+        while self.pos < len(self.source):
+            self._skip_whitespace_and_comments()
+            if self.pos >= len(self.source):
+                break
+
+            ch = self.source[self.pos]
+
+            # String literals
+            if ch == '"':
+                self._read_string()
+            # Numbers
+            elif ch.isdigit() or (ch == '-' and self._peek(1).isdigit()):
+                self._read_number()
+            # Identifiers and keywords
+            elif ch.isalpha() or ch == '_':
+                self._read_identifier()
+            # Operators and symbols
+            else:
+                self._read_symbol()
+
+        self.tokens.append(Token(TokenType.EOF, None, self.line, self.column))
+        return self.tokens
+
+    def _peek(self, offset: int = 0) -> str:
+        pos = self.pos + offset
+        if pos < len(self.source):
+            return self.source[pos]
+        return ""
+
+    def _advance(self) -> str:
+        ch = self.source[self.pos]
+        self.pos += 1
+        if ch == '\n':
+            self.line += 1
+            self.column = 1
+        else:
+            self.column += 1
+        return ch
+
+    def _skip_whitespace_and_comments(self):
+        while self.pos < len(self.source):
+            ch = self.source[self.pos]
+            if ch in ' \t\r\n':
+                self._advance()
+            elif ch == '#':
+                # Skip to end of line
+                while self.pos < len(self.source) and self.source[self.pos] != '\n':
+                    self._advance()
+            else:
+                break
+
+    def _read_string(self):
+        start_line, start_col = self.line, self.column
+        self._advance()  # Skip opening quote
+
+        value = ""
+        while self.pos < len(self.source) and self.source[self.pos] != '"':
+            if self.source[self.pos] == '\\':
+                self._advance()
+                if self.pos < len(self.source):
+                    escape_ch = self._advance()
+                    if escape_ch == 'n':
+                        value += '\n'
+                    elif escape_ch == 't':
+                        value += '\t'
+                    else:
+                        value += escape_ch
+            else:
+                value += self._advance()
+
+        if self.pos < len(self.source):
+            self._advance()  # Skip closing quote
+
+        self.tokens.append(Token(TokenType.STRING, value, start_line, start_col))
+
+    def _read_number(self):
+        start_line, start_col = self.line, self.column
+        value = ""
+
+        if self.source[self.pos] == '-':
+            value += self._advance()
+
+        while self.pos < len(self.source) and (self.source[self.pos].isdigit() or self.source[self.pos] == '.'):
+            value += self._advance()
+
+        # Check for percentage
+        if self.pos < len(self.source) and self.source[self.pos] == '%':
+            self._advance()
+            num_value = float(value) / 100
+        else:
+            num_value = float(value) if '.' in value else int(value)
+
+        self.tokens.append(Token(TokenType.NUMBER, num_value, start_line, start_col))
+
+    def _read_identifier(self):
+        start_line, start_col = self.line, self.column
+        value = ""
+
+        while self.pos < len(self.source) and (self.source[self.pos].isalnum() or self.source[self.pos] == '_'):
+            value += self._advance()
+
+        # Check if keyword
+        if value in self.KEYWORDS:
+            token_type = TokenType[value.upper()]
+        else:
+            token_type = TokenType.IDENTIFIER
+
+        self.tokens.append(Token(token_type, value, start_line, start_col))
+
+    def _read_symbol(self):
+        start_line, start_col = self.line, self.column
+        ch = self._advance()
+
+        # Two-character operators
+        if ch == '=' and self._peek() == '>':
+            self._advance()
+            self.tokens.append(Token(TokenType.ARROW, "=>", start_line, start_col))
+        elif ch == '=' and self._peek() == '=':
+            self._advance()
+            self.tokens.append(Token(TokenType.EQ, "==", start_line, start_col))
+        elif ch == '!' and self._peek() == '=':
+            self._advance()
+            self.tokens.append(Token(TokenType.NE, "!=", start_line, start_col))
+        elif ch == '<' and self._peek() == '=':
+            self._advance()
+            self.tokens.append(Token(TokenType.LE, "<=", start_line, start_col))
+        elif ch == '>' and self._peek() == '=':
+            self._advance()
+            self.tokens.append(Token(TokenType.GE, ">=", start_line, start_col))
+        # Single-character operators
+        elif ch == '{':
+            self.tokens.append(Token(TokenType.LBRACE, ch, start_line, start_col))
+        elif ch == '}':
+            self.tokens.append(Token(TokenType.RBRACE, ch, start_line, start_col))
+        elif ch == '(':
+            self.tokens.append(Token(TokenType.LPAREN, ch, start_line, start_col))
+        elif ch == ')':
+            self.tokens.append(Token(TokenType.RPAREN, ch, start_line, start_col))
+        elif ch == '[':
+            self.tokens.append(Token(TokenType.LBRACKET, ch, start_line, start_col))
+        elif ch == ']':
+            self.tokens.append(Token(TokenType.RBRACKET, ch, start_line, start_col))
+        elif ch == ',':
+            self.tokens.append(Token(TokenType.COMMA, ch, start_line, start_col))
+        elif ch == ':':
+            self.tokens.append(Token(TokenType.COLON, ch, start_line, start_col))
+        elif ch == '.':
+            self.tokens.append(Token(TokenType.DOT, ch, start_line, start_col))
+        elif ch == '=':
+            self.tokens.append(Token(TokenType.EQUALS, ch, start_line, start_col))
+        elif ch == '+':
+            self.tokens.append(Token(TokenType.PLUS, ch, start_line, start_col))
+        elif ch == '-':
+            self.tokens.append(Token(TokenType.MINUS, ch, start_line, start_col))
+        elif ch == '*':
+            self.tokens.append(Token(TokenType.STAR, ch, start_line, start_col))
+        elif ch == '/':
+            self.tokens.append(Token(TokenType.SLASH, ch, start_line, start_col))
+        elif ch == '%':
+            self.tokens.append(Token(TokenType.PERCENT, ch, start_line, start_col))
+        elif ch == '<':
+            self.tokens.append(Token(TokenType.LT, ch, start_line, start_col))
+        elif ch == '>':
+            self.tokens.append(Token(TokenType.GT, ch, start_line, start_col))
+        else:
+            raise SyntaxError(f"Unexpected character '{ch}' at line {start_line}, column {start_col}")
+
+
+class Parser:
+    """Recursive descent parser for Cosilico DSL."""
+
+    def __init__(self, tokens: list[Token]):
+        self.tokens = tokens
+        self.pos = 0
+
+    def parse(self) -> Module:
+        module = Module()
+
+        while not self._is_at_end():
+            if self._check(TokenType.MODULE):
+                module.module_decl = self._parse_module_decl()
+            elif self._check(TokenType.VERSION):
+                module.version_decl = self._parse_version_decl()
+            elif self._check(TokenType.JURISDICTION):
+                module.jurisdiction_decl = self._parse_jurisdiction_decl()
+            elif self._check(TokenType.IMPORT):
+                module.imports.append(self._parse_import())
+            elif self._check(TokenType.PRIVATE) or self._check(TokenType.INTERNAL):
+                visibility = self._advance().value
+                if self._check(TokenType.VARIABLE):
+                    var = self._parse_variable()
+                    var.visibility = visibility
+                    module.variables.append(var)
+            elif self._check(TokenType.VARIABLE):
+                module.variables.append(self._parse_variable())
+            elif self._check(TokenType.ENUM):
+                module.enums.append(self._parse_enum())
+            else:
+                # Skip unexpected tokens
+                self._advance()
+
+        return module
+
+    def _is_at_end(self) -> bool:
+        return self._peek().type == TokenType.EOF
+
+    def _peek(self) -> Token:
+        return self.tokens[self.pos]
+
+    def _previous(self) -> Token:
+        return self.tokens[self.pos - 1]
+
+    def _check(self, token_type: TokenType) -> bool:
+        if self._is_at_end():
+            return False
+        return self._peek().type == token_type
+
+    def _peek_next_is(self, token_type: TokenType) -> bool:
+        """Check if the next token (after current) is of given type."""
+        if self.pos + 1 >= len(self.tokens):
+            return False
+        return self.tokens[self.pos + 1].type == token_type
+
+    def _advance(self) -> Token:
+        if not self._is_at_end():
+            self.pos += 1
+        return self._previous()
+
+    def _consume(self, token_type: TokenType, message: str) -> Token:
+        if self._check(token_type):
+            return self._advance()
+        raise SyntaxError(f"{message} at line {self._peek().line}")
+
+    def _parse_module_decl(self) -> ModuleDecl:
+        self._consume(TokenType.MODULE, "Expected 'module'")
+        path = self._parse_dotted_name()
+        return ModuleDecl(path=path)
+
+    def _parse_version_decl(self) -> VersionDecl:
+        self._consume(TokenType.VERSION, "Expected 'version'")
+        version = self._consume(TokenType.STRING, "Expected version string").value
+        return VersionDecl(version=version)
+
+    def _parse_jurisdiction_decl(self) -> JurisdictionDecl:
+        self._consume(TokenType.JURISDICTION, "Expected 'jurisdiction'")
+        jurisdiction = self._consume(TokenType.IDENTIFIER, "Expected jurisdiction name").value
+        return JurisdictionDecl(jurisdiction=jurisdiction)
+
+    def _parse_import(self) -> ImportDecl:
+        self._consume(TokenType.IMPORT, "Expected 'import'")
+        module_path = self._parse_dotted_name()
+
+        self._consume(TokenType.LPAREN, "Expected '('")
+
+        names = []
+        if self._check(TokenType.STAR):
+            self._advance()
+            names = ["*"]
+        else:
+            names.append(self._consume(TokenType.IDENTIFIER, "Expected identifier").value)
+            while self._check(TokenType.COMMA):
+                self._advance()
+                names.append(self._consume(TokenType.IDENTIFIER, "Expected identifier").value)
+
+        self._consume(TokenType.RPAREN, "Expected ')'")
+
+        alias = None
+        # Check for 'as alias' pattern
+
+        return ImportDecl(module_path=module_path, names=names, alias=alias)
+
+    def _parse_dotted_name(self) -> str:
+        name = self._consume(TokenType.IDENTIFIER, "Expected identifier").value
+        while self._check(TokenType.DOT):
+            self._advance()
+            name += "." + self._consume(TokenType.IDENTIFIER, "Expected identifier").value
+        return name
+
+    def _parse_variable(self) -> VariableDef:
+        self._consume(TokenType.VARIABLE, "Expected 'variable'")
+        name = self._consume(TokenType.IDENTIFIER, "Expected variable name").value
+        self._consume(TokenType.LBRACE, "Expected '{'")
+
+        var = VariableDef(
+            name=name,
+            entity="",
+            period="",
+            dtype="",
+            reference="",
+        )
+
+        while not self._check(TokenType.RBRACE) and not self._is_at_end():
+            if self._check(TokenType.ENTITY):
+                self._advance()
+                var.entity = self._consume(TokenType.IDENTIFIER, "Expected entity type").value
+            elif self._check(TokenType.PERIOD):
+                self._advance()
+                var.period = self._consume(TokenType.IDENTIFIER, "Expected period type").value
+            elif self._check(TokenType.DTYPE):
+                self._advance()
+                var.dtype = self._parse_dtype()
+            elif self._check(TokenType.REFERENCE):
+                self._advance()
+                var.reference = self._consume(TokenType.STRING, "Expected reference string").value
+            elif self._check(TokenType.LABEL):
+                self._advance()
+                var.label = self._consume(TokenType.STRING, "Expected label string").value
+            elif self._check(TokenType.DESCRIPTION):
+                self._advance()
+                var.description = self._consume(TokenType.STRING, "Expected description string").value
+            elif self._check(TokenType.UNIT):
+                self._advance()
+                var.unit = self._consume(TokenType.STRING, "Expected unit string").value
+            elif self._check(TokenType.FORMULA):
+                self._advance()
+                self._consume(TokenType.LBRACE, "Expected '{'")
+                var.formula = self._parse_formula_block()
+                self._consume(TokenType.RBRACE, "Expected '}'")
+            elif self._check(TokenType.DEFINED_FOR):
+                self._advance()
+                self._consume(TokenType.LBRACE, "Expected '{'")
+                var.defined_for = self._parse_expression()
+                self._consume(TokenType.RBRACE, "Expected '}'")
+            elif self._check(TokenType.DEFAULT):
+                self._advance()
+                var.default = self._parse_literal_value()
+            else:
+                self._advance()  # Skip unknown
+
+        self._consume(TokenType.RBRACE, "Expected '}'")
+        return var
+
+    def _parse_dtype(self) -> str:
+        dtype = self._consume(TokenType.IDENTIFIER, "Expected data type").value
+        # Handle parameterized types like Enum(T)
+        if self._check(TokenType.LPAREN):
+            self._advance()
+            inner = self._consume(TokenType.IDENTIFIER, "Expected type parameter").value
+            self._consume(TokenType.RPAREN, "Expected ')'")
+            dtype = f"{dtype}({inner})"
+        return dtype
+
+    def _parse_enum(self) -> EnumDef:
+        self._consume(TokenType.ENUM, "Expected 'enum'")
+        name = self._consume(TokenType.IDENTIFIER, "Expected enum name").value
+        self._consume(TokenType.LBRACE, "Expected '{'")
+
+        values = []
+        while not self._check(TokenType.RBRACE) and not self._is_at_end():
+            values.append(self._consume(TokenType.IDENTIFIER, "Expected enum value").value)
+
+        self._consume(TokenType.RBRACE, "Expected '}'")
+        return EnumDef(name=name, values=values)
+
+    def _parse_formula_block(self) -> FormulaBlock:
+        bindings = []
+        return_expr = None
+
+        while not self._check(TokenType.RBRACE) and not self._is_at_end():
+            if self._check(TokenType.LET):
+                bindings.append(self._parse_let_binding())
+            elif self._check(TokenType.RETURN):
+                self._advance()
+                return_expr = self._parse_expression()
+                break
+            else:
+                # Implicit return - expression without 'return' keyword
+                return_expr = self._parse_expression()
+                break
+
+        return FormulaBlock(bindings=bindings, return_expr=return_expr)
+
+    def _parse_let_binding(self) -> LetBinding:
+        self._consume(TokenType.LET, "Expected 'let'")
+        name = self._consume(TokenType.IDENTIFIER, "Expected variable name").value
+        self._consume(TokenType.EQUALS, "Expected '='")
+        value = self._parse_expression()
+        return LetBinding(name=name, value=value)
+
+    def _parse_expression(self) -> Expression:
+        return self._parse_or_expr()
+
+    def _parse_or_expr(self) -> Expression:
+        left = self._parse_and_expr()
+
+        while self._check(TokenType.OR):
+            self._advance()
+            right = self._parse_and_expr()
+            left = BinaryOp(op="or", left=left, right=right)
+
+        return left
+
+    def _parse_and_expr(self) -> Expression:
+        left = self._parse_comparison()
+
+        while self._check(TokenType.AND):
+            self._advance()
+            right = self._parse_comparison()
+            left = BinaryOp(op="and", left=left, right=right)
+
+        return left
+
+    def _parse_comparison(self) -> Expression:
+        left = self._parse_additive()
+
+        while self._check(TokenType.EQ) or self._check(TokenType.NE) or \
+              self._check(TokenType.LT) or self._check(TokenType.GT) or \
+              self._check(TokenType.LE) or self._check(TokenType.GE):
+            op = self._advance().value
+            right = self._parse_additive()
+            left = BinaryOp(op=op, left=left, right=right)
+
+        return left
+
+    def _parse_additive(self) -> Expression:
+        left = self._parse_multiplicative()
+
+        while self._check(TokenType.PLUS) or self._check(TokenType.MINUS):
+            op = self._advance().value
+            right = self._parse_multiplicative()
+            left = BinaryOp(op=op, left=left, right=right)
+
+        return left
+
+    def _parse_multiplicative(self) -> Expression:
+        left = self._parse_unary()
+
+        while self._check(TokenType.STAR) or self._check(TokenType.SLASH) or self._check(TokenType.PERCENT):
+            op = self._advance().value
+            right = self._parse_unary()
+            left = BinaryOp(op=op, left=left, right=right)
+
+        return left
+
+    def _parse_unary(self) -> Expression:
+        if self._check(TokenType.MINUS) or self._check(TokenType.NOT):
+            op = self._advance().value
+            operand = self._parse_unary()
+            return UnaryOp(op=op, operand=operand)
+
+        return self._parse_primary()
+
+    def _parse_primary(self) -> Expression:
+        # If expression
+        if self._check(TokenType.IF):
+            return self._parse_if_expr()
+
+        # Match expression
+        if self._check(TokenType.MATCH):
+            return self._parse_match_expr()
+
+        # Parenthesized expression
+        if self._check(TokenType.LPAREN):
+            self._advance()
+            expr = self._parse_expression()
+            self._consume(TokenType.RPAREN, "Expected ')'")
+            return expr
+
+        # Literals
+        if self._check(TokenType.NUMBER):
+            value = self._advance().value
+            return Literal(value=value, dtype="number")
+
+        if self._check(TokenType.STRING):
+            value = self._advance().value
+            return Literal(value=value, dtype="string")
+
+        if self._check(TokenType.TRUE):
+            self._advance()
+            return Literal(value=True, dtype="bool")
+
+        if self._check(TokenType.FALSE):
+            self._advance()
+            return Literal(value=False, dtype="bool")
+
+        # Special handling for variable() and parameter() as function calls
+        # These are keywords but can also be used as function names
+        if self._check(TokenType.VARIABLE) and self._peek_next_is(TokenType.LPAREN):
+            name = self._advance().value  # "variable"
+            return self._parse_function_call(name)
+
+        # Function calls or identifiers
+        if self._check(TokenType.IDENTIFIER):
+            name = self._advance().value
+
+            # Check for function call
+            if self._check(TokenType.LPAREN):
+                return self._parse_function_call(name)
+
+            # Check for dotted access (e.g., parameter path)
+            while self._check(TokenType.DOT):
+                self._advance()
+                name += "." + self._consume(TokenType.IDENTIFIER, "Expected identifier").value
+
+                # Check for method call
+                if self._check(TokenType.LPAREN):
+                    return self._parse_function_call(name)
+
+            # Check for indexing
+            if self._check(TokenType.LBRACKET):
+                self._advance()
+                index = self._parse_expression()
+                self._consume(TokenType.RBRACKET, "Expected ']'")
+
+                if isinstance(index, Identifier):
+                    return ParameterRef(path=name, index=index.name)
+                return ParameterRef(path=name, index=str(index))
+
+            return Identifier(name=name)
+
+        raise SyntaxError(f"Unexpected token {self._peek().type} at line {self._peek().line}")
+
+    def _parse_function_call(self, name: str) -> Expression:
+        self._consume(TokenType.LPAREN, "Expected '('")
+
+        args = []
+        if not self._check(TokenType.RPAREN):
+            args.append(self._parse_expression())
+            while self._check(TokenType.COMMA):
+                self._advance()
+                args.append(self._parse_expression())
+
+        self._consume(TokenType.RPAREN, "Expected ')'")
+
+        # Special handling for variable() and parameter()
+        if name == "variable":
+            if args and isinstance(args[0], Identifier):
+                return VariableRef(name=args[0].name)
+            elif args and isinstance(args[0], Literal):
+                return VariableRef(name=str(args[0].value))
+
+        if name == "parameter":
+            if args and isinstance(args[0], Identifier):
+                return ParameterRef(path=args[0].name)
+            elif args and isinstance(args[0], Literal):
+                return ParameterRef(path=str(args[0].value))
+
+        return FunctionCall(name=name, args=args)
+
+    def _parse_if_expr(self) -> IfExpr:
+        self._consume(TokenType.IF, "Expected 'if'")
+        condition = self._parse_expression()
+        self._consume(TokenType.THEN, "Expected 'then'")
+        then_branch = self._parse_expression()
+        self._consume(TokenType.ELSE, "Expected 'else'")
+        else_branch = self._parse_expression()
+        return IfExpr(condition=condition, then_branch=then_branch, else_branch=else_branch)
+
+    def _parse_match_expr(self) -> MatchExpr:
+        self._consume(TokenType.MATCH, "Expected 'match'")
+
+        # Check if matching on a value (match x { ... }) or conditions (match { ... })
+        match_value = None
+        if not self._check(TokenType.LBRACE):
+            match_value = self._parse_expression()
+
+        self._consume(TokenType.LBRACE, "Expected '{'")
+
+        cases = []
+        while not self._check(TokenType.RBRACE) and not self._is_at_end():
+            if self._check(TokenType.CASE):
+                self._advance()
+                condition = self._parse_expression()
+                self._consume(TokenType.ARROW, "Expected '=>'")
+                value = self._parse_expression()
+                cases.append(MatchCase(condition=condition, value=value))
+            elif self._check(TokenType.ELSE):
+                self._advance()
+                self._consume(TokenType.ARROW, "Expected '=>'")
+                value = self._parse_expression()
+                cases.append(MatchCase(condition=None, value=value))
+            else:
+                break
+
+        self._consume(TokenType.RBRACE, "Expected '}'")
+        return MatchExpr(cases=cases)
+
+    def _parse_literal_value(self) -> Any:
+        if self._check(TokenType.NUMBER):
+            return self._advance().value
+        if self._check(TokenType.STRING):
+            return self._advance().value
+        if self._check(TokenType.TRUE):
+            self._advance()
+            return True
+        if self._check(TokenType.FALSE):
+            self._advance()
+            return False
+        if self._check(TokenType.IDENTIFIER):
+            return self._advance().value
+        return None
+
+
+def parse_dsl(source: str) -> Module:
+    """Parse Cosilico DSL source code into an AST."""
+    lexer = Lexer(source)
+    tokens = lexer.tokenize()
+    parser = Parser(tokens)
+    return parser.parse()
+
+
+def parse_file(filepath: str) -> Module:
+    """Parse a .cosilico file."""
+    with open(filepath, 'r') as f:
+        source = f.read()
+    return parse_dsl(source)
