@@ -4,20 +4,19 @@
 # credit percentage of so much of the taxpayer's earned income for such
 # taxable year as does not exceed the earned income amount."
 
-module us.26.32.a.2.A
+module statute.26.32.a.2.A
 version "2024.1"
-jurisdiction us
 
 references {
   # Input: earned income from §32(c)(2)
-  earned_income: us/26/32/c/2/A/earned_income
+  earned_income: statute/26/32/c/2/A/earned_income
 
   # Parameters from §32(b) - the percentages and amounts table
-  credit_percentage: us/26/32/b/1/credit_percentage
-  earned_income_amount: us/26/32/b/2/A/earned_income_amount
+  credit_percentage: statute/26/32/b/1/credit_percentage
+  earned_income_amount: statute/26/32/b/2/A/earned_income_amount
 
   # Number of qualifying children affects which row of the table we use
-  num_qualifying_children: us/26/32/c/3/A/num_qualifying_children
+  num_qualifying_children: statute/26/32/c/3/A/num_qualifying_children
 }
 
 variable initial_credit_amount {

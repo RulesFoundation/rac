@@ -20,7 +20,7 @@ Cosilico's approach: **encode the indexing rule itself**, compute indexed values
 The statute specifies HOW to index. For EITC, it's 26 USC §32(j):
 
 ```
-us/irc/subtitle_a/chapter_1/subchapter_a/part_iv/subpart_c/§32/j/
+statute/26/32/j/
 ├── 1/indexing_rule.yaml    # The rule itself
 └── 2/rounding_rule.yaml    # Rounding specification
 ```
@@ -42,10 +42,10 @@ indexing_rule:
   reference: "26 USC § 32(j)(1)"
 
   applies_to:
-    - us/irc/.../§32/b/2/A/earned_income_amount
-    - us/irc/.../§32/b/2/A/phaseout_amount
-    - us/irc/.../§32/b/2/B/joint_return_adjustment
-    - us/irc/.../§32/i/1/disqualified_income_limit
+    - statute/26/32/b/2/A/earned_income_amount
+    - statute/26/32/b/2/A/phaseout_amount
+    - statute/26/32/b/2/B/joint_return_adjustment
+    - statute/26/32/i/1/disqualified_income_limit
 
   method:
     type: cost_of_living_adjustment
@@ -64,8 +64,8 @@ indexing_rule:
 The index itself lives at its statutory home:
 
 ```
-us/irc/subtitle_a/chapter_1/subchapter_a/part_i/§1/f/3/
-└── cost_of_living_index.yaml
+statute/26/1/f/3/
+└── cost_of_living_adjustment.yaml
 ```
 
 ```yaml
@@ -181,7 +181,7 @@ When resolving a parameter value for a given year, use this precedence:
 earned_income_amount:
   reference: "26 USC § 32(b)(2)(A)"
   indexed_by: [num_qualifying_children]
-  indexing_rule: us/irc/.../§32/j/1/indexing_rule
+  indexing_rule: statute/26/32/j/1/indexing_rule
 
   # Tier 1: Published values (authoritative)
   published:
@@ -353,17 +353,10 @@ def indexing_reward(generated: str, statute: Statute) -> float:
 ## Example: Full EITC Indexing
 
 ```
-us/irc/subtitle_a/chapter_1/subchapter_a/part_iv/subpart_c/§32/
+statute/26/32/
 ├── j/                                    # Indexing rules live at §32(j)
-│   ├── 1/
-│   │   ├── A/indexing_rule.yaml         # The rule: "increased by CPI adjustment"
-│   │   └── B/
-│   │       ├── i/earned_income_adjustment.cosilico
-│   │       ├── ii/joint_return_adjustment.cosilico
-│   │       └── iii/disqualified_income_adjustment.cosilico
-│   └── 2/
-│       ├── A/rounding_rule.yaml          # Round to nearest $10
-│       └── B/disqualified_income_rounding.yaml  # Round to nearest $50
+│   ├── 1/indexing_rule.yaml             # The rule: "increased by CPI adjustment"
+│   └── 2/rounding_rules.yaml            # Round to nearest $10
 │
 ├── b/2/A/amounts.yaml                    # References §32(j) for indexing
 └── i/1/disqualified_income_limit.yaml   # References §32(j) for indexing
@@ -399,15 +392,15 @@ class ParameterResolver:
 resolver = ParameterResolver(index_store)
 
 # Get 2024 EITC earned income amount (will use published Rev. Proc. value)
-resolver.get("us/irc/.../§32/b/2/A/earned_income_amount", 2024, num_qualifying_children=1)
+resolver.get("statute/26/32/b/2/A/earned_income_amount", 2024, num_qualifying_children=1)
 # Returns: ParameterValue(value=12390, source="Rev. Proc. 2023-34", tier="published")
 
 # Get 2025 value (not yet published, uses projected)
-resolver.get("us/irc/.../§32/b/2/A/earned_income_amount", 2025, num_qualifying_children=1)
+resolver.get("statute/26/32/b/2/A/earned_income_amount", 2025, num_qualifying_children=1)
 # Returns: ParameterValue(value=12720, source="Calculated via §32(j)", tier="projected", vintage="2024-06")
 
 # Get 2030 value (forecast-based calculation)
-resolver.get("us/irc/.../§32/b/2/A/earned_income_amount", 2030, num_qualifying_children=1, vintage="2024-06")
+resolver.get("statute/26/32/b/2/A/earned_income_amount", 2030, num_qualifying_children=1, vintage="2024-06")
 # Returns: ParameterValue(value=14200, source="Calculated via §32(j)", tier="calculated", vintage="2024-06")
 ```
 

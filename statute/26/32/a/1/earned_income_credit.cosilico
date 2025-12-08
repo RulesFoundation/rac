@@ -5,25 +5,24 @@
 # equal to the credit percentage of so much of the taxpayer's earned income
 # for the taxable year as does not exceed the earned income amount."
 
-module us.26.32.a.1
+module statute.26.32.a.1
 version "2024.1"
-jurisdiction us
 
 references {
   # Inputs from other Title 26 sections
-  earned_income: us/26/32/c/2/A/earned_income
-  adjusted_gross_income: us/26/62/a/adjusted_gross_income
-  filing_status: us/26/1/filing_status
+  earned_income: statute/26/32/c/2/A/earned_income
+  adjusted_gross_income: statute/26/62/a/adjusted_gross_income
+  filing_status: statute/26/1/filing_status
 
   # Eligibility from §32(c)(1)
-  is_eligible_individual: us/26/32/c/1/A/i/is_eligible_individual
+  is_eligible_individual: statute/26/32/c/1/A/i/is_eligible_individual
 
   # Credit components from §32(a)(2)
-  initial_credit_amount: us/26/32/a/2/A/initial_credit_amount
-  credit_reduction_amount: us/26/32/a/2/B/credit_reduction_amount
+  initial_credit_amount: statute/26/32/a/2/A/initial_credit_amount
+  credit_reduction_amount: statute/26/32/a/2/B/credit_reduction_amount
 
   # Parameters from §32(b)
-  agi_limit: us/26/32/b/2/A/agi_limit
+  agi_limit: statute/26/32/b/2/A/agi_limit
 }
 
 variable earned_income_credit {

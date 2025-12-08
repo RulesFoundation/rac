@@ -2,6 +2,37 @@
 
 Cosilico's defining architectural choice: **code structure mirrors legal structure**.
 
+## Repository Architecture
+
+The Cosilico ecosystem consists of multiple repositories:
+
+```
+cosilico-engine/          # Core engine (this repo)
+├── src/cosilico/         # Parser, executor, RL training, indexing
+├── statute/              # Example rules for testing/development
+└── data/                 # Index data (CPI values, forecasts)
+
+cosilico-us/              # US federal tax/benefit rules
+├── statute/26/           # Title 26 (Internal Revenue Code)
+├── statute/42/           # Title 42 (Social Security, Medicare)
+├── regs/                 # Treasury regulations (26 CFR)
+└── guidance/             # IRS notices, Revenue Procedures
+
+cosilico-us-ca/           # California state rules
+├── statute/rtc/          # Revenue and Taxation Code
+└── regs/                 # FTB regulations
+
+cosilico-uk/              # UK tax/benefit rules
+├── statute/FA2024/       # Finance Act 2024
+├── statute/ITA2007/      # Income Tax Act 2007
+└── regs/                 # HMRC regulations
+```
+
+Each jurisdiction repo uses the same structure:
+- `statute/` - Primary law (USC, Acts of Parliament, etc.)
+- `regs/` - Implementing regulations
+- `guidance/` - Agency guidance
+
 ## The Core Insight
 
 Traditional tax software organizes by calculation type:
@@ -18,21 +49,19 @@ calculations/
 
 Cosilico organizes by statutory citation:
 ```
-us/
-└── title_26/              # 26 USC (Internal Revenue Code)
-    └── §32/               # Section 32 - EITC
-        ├── a/1/earned_income_credit.cosilico     # §32(a)(1)
-        ├── a/2/A/initial_credit_amount.cosilico  # §32(a)(2)(A)
-        ├── a/2/B/credit_reduction_amount.cosilico # §32(a)(2)(B)
-        ├── b/1/credit_percentage.yaml            # §32(b)(1) parameters
-        ├── b/2/A/amounts.yaml                    # §32(b)(2)(A) parameters
-        ├── c/2/A/earned_income.cosilico          # §32(c)(2)(A) definition
-        ├── i/1/disqualified_income_limit.yaml    # §32(i)(1) parameter
-        ├── j/1/indexing_rule.yaml                # §32(j)(1) indexing
-        └── j/2/rounding_rules.yaml               # §32(j)(2) rounding
+statute/26/32/                                   # §32 - EITC
+├── a/1/earned_income_credit.cosilico           # §32(a)(1)
+├── a/2/A/initial_credit_amount.cosilico        # §32(a)(2)(A)
+├── a/2/B/credit_reduction_amount.cosilico      # §32(a)(2)(B)
+├── b/1/credit_percentage.yaml                  # §32(b)(1) parameters
+├── b/2/A/amounts.yaml                          # §32(b)(2)(A) indexed amounts
+├── c/2/A/earned_income.cosilico                # §32(c)(2)(A) definition
+├── i/1/disqualified_income_limit.yaml          # §32(i)(1) parameter
+├── j/1/indexing_rule.yaml                      # §32(j)(1) indexing
+└── j/2/rounding_rules.yaml                     # §32(j)(2) rounding
 ```
 
-**The path IS the legal citation.** `us/26/32/a/1/` maps to "26 USC §32(a)(1)".
+**The path IS the legal citation.** `statute/26/32/a/1/` maps to "26 USC §32(a)(1)".
 
 Section numbers are unique within a title, so we don't need the full subtitle/chapter/subchapter hierarchy.
 
@@ -42,7 +71,7 @@ Section numbers are unique within a title, so we don't need the full subtitle/ch
 
 ```python
 # Variable at:
-# us/26/32/a/1/earned_income_credit
+# statute/26/32/a/1/earned_income_credit
 
 # Maps directly to:
 # 26 USC §32(a)(1)
@@ -58,8 +87,8 @@ When a regulator asks "where does this calculation come from?", the answer is th
 
 When Congress amends §32(b)(2), the git diff shows exactly what changed:
 ```diff
-- us/26/32/b/2/parameters/earned_income_amount.yaml
-+ us/26/32/b/2/parameters/earned_income_amount.yaml
+- statute/26/32/b/2/amounts.yaml
++ statute/26/32/b/2/amounts.yaml
 ```
 
 ### 4. AI Training Signal
@@ -74,33 +103,33 @@ Each statutory clause gets exactly one variable. Complex provisions become compo
 
 **§32(a)(1)** - "there shall be allowed as a credit..."
 ```
-§32/a/1/variables/earned_income_credit.cosilico
+statute/26/32/a/1/earned_income_credit.cosilico
 ```
 
 **§32(a)(2)(A)** - "credit percentage of earned income..."
 ```
-§32/a/2/A/variables/initial_credit_amount.cosilico
+statute/26/32/a/2/A/initial_credit_amount.cosilico
 ```
 
 **§32(a)(2)(B)** - "the greater of AGI or earned income..."
 ```
-§32/a/2/B/variables/phaseout_income.cosilico
+statute/26/32/a/2/B/credit_reduction_amount.cosilico
 ```
 
 **§32(b)(1)** - Credit percentages (parameter, not formula)
 ```
-§32/b/1/parameters/credit_percentage.yaml
+statute/26/32/b/1/credit_percentage.yaml
 ```
 
 **§32(c)(1)(A)(i)** - "has qualifying child"
 ```
-§32/c/1/A/i/variables/has_qualifying_child.cosilico
+statute/26/32/c/1/A/i/is_eligible_individual.cosilico
 ```
 
 ### The Final Credit Composes Everything
 
 ```cosilico
-# us/26/32/a/1/earned_income_credit.cosilico
+# statute/26/32/a/1/earned_income_credit.cosilico
 #
 # 26 USC §32(a)(1)
 #
@@ -110,17 +139,16 @@ Each statutory clause gets exactly one variable. Complex provisions become compo
 # earned income for the taxable year as does not exceed the earned
 # income amount, over [the phaseout reduction]."
 
-module us.irc.subtitle_a.chapter_1.subchapter_a.part_iv.subpart_c.§32.a.1
+module statute.26.32.a.1
 version "2024.1"
-jurisdiction us
 
 references {
   # Eligibility from §32(c)(1)
-  is_eligible_individual: us/26/32/c/1/A/i/is_eligible_individual
+  is_eligible_individual: statute/26/32/c/1/A/i/is_eligible_individual
 
   # Credit components from §32(a)(2)
-  initial_credit_amount: us/26/32/a/2/A/initial_credit_amount
-  credit_reduction_amount: us/26/32/a/2/B/credit_reduction_amount
+  initial_credit_amount: statute/26/32/a/2/A/initial_credit_amount
+  credit_reduction_amount: statute/26/32/a/2/B/credit_reduction_amount
 }
 
 variable earned_income_credit {
@@ -148,60 +176,66 @@ Not everything comes from statute. Regulations, agency guidance, and case law al
 
 ```
 cosilico-us/
-├── irc/                           # Statutes (primary)
-│   └── .../§32/
+├── statute/                       # Primary law
+│   └── 26/32/...
 │
-└── cfr/                           # Code of Federal Regulations
-    └── title_26/
-        └── §1.32-1/               # Reg interpreting §32
-            └── variables/
-                └── qualifying_child_tiebreaker.cosilico
+└── regs/                          # Code of Federal Regulations
+    └── 26/1.32-1/                 # Reg interpreting §32
+        └── qualifying_child_tiebreaker.cosilico
 ```
 
-The path `us/cfr/title_26/§1.32-1` maps to "26 CFR §1.32-1".
+The path `regs/26/1.32-1` maps to "26 CFR §1.32-1".
 
 ### Agency Guidance
 
 ```
 cosilico-us/
-└── irs/
-    └── notices/
-        └── 2024-01/
-            └── parameters/
-                └── safe_harbor_threshold.yaml
+└── guidance/
+    └── irs/
+        └── rev_proc_2023_34/
+            └── indexed_amounts.yaml
 ```
 
 ### Hierarchy of Authority
 
 When sources conflict, statute wins:
 ```
-statute > regulation > agency_guidance > case_law
+statute > regs > guidance > case_law
 ```
 
 The engine resolves by source authority.
 
-## Cross-References as Imports
+## Cross-References Between Repos
 
-Legal cross-references become code imports:
+When a state references federal law, use fully-qualified paths:
 
-```python
-# us-ca/rtc/division_2/.../§17041/(a)/variables/ca_taxable_income.cosilico
+```cosilico
+# In cosilico-us-ca/statute/rtc/17041/a/ca_taxable_income.cosilico
 
-"""
-RTC §17041(a) - California taxable income starts with federal AGI
-"""
+module statute.rtc.17041.a
+version "2024.1"
 
-references:
-  # "as defined in section 62" becomes a reference to §62
-  federal_agi: us/irc/subtitle_a/chapter_1/subchapter_b/part_1/§62/(a)/adjusted_gross_income
-  ca_additions: us-ca/rtc/division_2/part_10/chapter_2.5/§17220/additions
-  ca_subtractions: us-ca/rtc/division_2/part_10/chapter_3/§17250/subtractions
+references {
+  # "as defined in section 62" becomes a reference to federal §62
+  federal_agi: cosilico-us://statute/26/62/a/adjusted_gross_income
 
-def ca_taxable_income() -> Money:
+  # California additions from state law
+  ca_additions: statute/rtc/17220/additions
+  ca_subtractions: statute/rtc/17250/subtractions
+}
+
+variable ca_taxable_income {
+  entity TaxUnit
+  period Year
+  dtype Money
+
+  formula {
     return federal_agi + ca_additions - ca_subtractions
+  }
+}
 ```
 
-When statute says "as defined in section 62", the code literally points to `§62`.
+When statute says "as defined in section 62", the code literally points to that section.
 
 ## Depth Guidelines
 
@@ -216,26 +250,23 @@ How deep to go in the hierarchy?
 
 **Simple section (§63(c)(2) - Standard Deduction Amount)**
 ```
-§63/(c)/(2)/parameters/standard_deduction_amount.yaml
+statute/26/63/c/2/standard_deduction_amount.yaml
 ```
 One parameter, one file.
 
 **Complex section (§32 - EITC)**
 ```
-§32/
-├── (a)/(1)/...
-├── (a)/(2)/(A)/...
-├── (a)/(2)/(B)/...
-├── (b)/(1)/...
-├── (b)/(2)/...
-├── (c)/(1)/(A)/(i)/...
-├── (c)/(1)/(A)/(ii)/...
-├── (c)/(1)/(B)/...
-├── (c)/(1)/(F)/...
-├── (c)/(2)/(A)/...
-├── (c)/(2)/(B)/...
-├── (i)/(1)/...
-└── (i)/(2)/...
+statute/26/32/
+├── a/1/...
+├── a/2/A/...
+├── a/2/B/...
+├── b/1/...
+├── b/2/...
+├── c/1/A/i/...
+├── c/1/A/ii/...
+├── c/2/A/...
+├── i/1/...
+└── j/1/...
 ```
 Full tree mirroring statute structure.
 
@@ -249,3 +280,4 @@ Full tree mirroring statute structure.
 | **AI training** | Structure is metadata |
 | **Debugging** | Trace clause-by-clause |
 | **No mapping** | Filesystem IS the citation system |
+| **Cross-jurisdiction** | Same structure works for US, UK, states |

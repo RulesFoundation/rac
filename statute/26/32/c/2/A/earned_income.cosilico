@@ -8,21 +8,20 @@
 #        net earnings shall be determined with regard to the deduction allowed
 #        to the taxpayer by section 164(f)."
 
-module us.26.32.c.2.A
+module statute.26.32.c.2.A
 version "2024.1"
-jurisdiction us
 
 references {
   # Wage income from §61
-  wages: us/irc/subtitle_a/chapter_1/subchapter_b/part_i/§61/a/1/wages
-  salaries: us/irc/subtitle_a/chapter_1/subchapter_b/part_i/§61/a/1/salaries
-  tips: us/irc/subtitle_a/chapter_1/subchapter_b/part_i/§61/a/1/tips
+  wages: statute/26/61/a/1/wages
+  salaries: statute/26/61/a/1/salaries
+  tips: statute/26/61/a/1/tips
 
   # Self-employment income from §1402
-  net_earnings_self_employment: us/26/1402/a/net_earnings_self_employment
+  net_earnings_self_employment: statute/26/1402/a/net_earnings_self_employment
 
   # Deduction for self-employment tax from §164(f)
-  se_tax_deduction: us/26/164/f/se_tax_deduction
+  se_tax_deduction: statute/26/164/f/se_tax_deduction
 }
 
 variable earned_income {

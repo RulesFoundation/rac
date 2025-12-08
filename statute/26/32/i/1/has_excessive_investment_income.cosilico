@@ -6,21 +6,20 @@
 #
 # Note: The $10,000 threshold is inflation-adjusted per §32(j)(1)(B)(iii)
 
-module us.26.32.i.1
+module statute.26.32.i.1
 version "2024.1"
-jurisdiction us
 
 references {
   # Components of disqualified income from §32(i)(2)
-  interest_income: us/irc/subtitle_a/chapter_1/subchapter_b/part_i/§61/a/4/interest_income
-  dividend_income: us/irc/subtitle_a/chapter_1/subchapter_b/part_i/§61/a/7/dividend_income
-  tax_exempt_interest: us/26/103/tax_exempt_interest
-  net_rent_royalty_income: us/26/32/i/2/C/net_rent_royalty_income
-  capital_gain_net_income: us/26/1222/11/capital_gain_net_income
-  net_passive_income: us/26/32/i/2/E/net_passive_income
+  interest_income: statute/26/61/a/4/interest_income
+  dividend_income: statute/26/61/a/7/dividend_income
+  tax_exempt_interest: statute/26/103/tax_exempt_interest
+  net_rent_royalty_income: statute/26/32/i/2/C/net_rent_royalty_income
+  capital_gain_net_income: statute/26/1222/11/capital_gain_net_income
+  net_passive_income: statute/26/32/i/2/E/net_passive_income
 
-  # Threshold parameter
-  disqualified_income_limit: us/26/32/i/1/disqualified_income_limit
+  # Threshold parameter (indexed per §32(j))
+  disqualified_income_limit: statute/26/32/i/1/disqualified_income_limit
 }
 
 variable disqualified_income {

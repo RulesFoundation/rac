@@ -90,6 +90,7 @@ class PromptEvolver:
         """Identify what made this encoding successful."""
         factors = []
 
+        # DSL structure patterns
         if "match {" in final_code:
             factors.append("Used match expression for conditionals")
         if "let " in final_code:
@@ -100,6 +101,28 @@ class PromptEvolver:
             factors.append("Properly referenced input variables")
         if len(trajectory) == 1:
             factors.append("Correct on first attempt")
+
+        # Statute-organized paths
+        if "references {" in final_code:
+            factors.append("Used references block for traceability")
+        if "statute/" in final_code or "statute." in final_code:
+            factors.append("Used statute-organized paths")
+
+        # Indexing awareness
+        if "indexing_rule" in final_code:
+            factors.append("Identified indexing provision")
+        if "indexed" in final_code.lower() or "cost_of_living" in final_code.lower():
+            factors.append("Recognized indexed parameters")
+        if "earned_income_amount[" in final_code:
+            factors.append("Used indexed parameter correctly")
+
+        # No hardcoding
+        has_hardcoded = any(
+            f"{x}:" in final_code or f"=> {x}" in final_code
+            for x in ["7840", "12390", "17400", "14600", "29200", "21900"]
+        )
+        if not has_hardcoded:
+            factors.append("Avoided hardcoding indexed values")
 
         return factors
 

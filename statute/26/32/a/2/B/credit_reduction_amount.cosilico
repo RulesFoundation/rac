@@ -6,23 +6,22 @@
 #   (ii) the earned income,
 # of the taxpayer for the taxable year as exceeds the phaseout amount."
 
-module us.26.32.a.2.B
+module statute.26.32.a.2.B
 version "2024.1"
-jurisdiction us
 
 references {
   # Inputs
-  earned_income: us/26/32/c/2/A/earned_income
-  adjusted_gross_income: us/26/62/a/adjusted_gross_income
-  filing_status: us/26/1/filing_status
+  earned_income: statute/26/32/c/2/A/earned_income
+  adjusted_gross_income: statute/26/62/a/adjusted_gross_income
+  filing_status: statute/26/1/filing_status
 
   # Parameters from §32(b)
-  phaseout_percentage: us/26/32/b/1/phaseout_percentage
-  phaseout_amount: us/26/32/b/2/A/phaseout_amount
-  joint_return_adjustment: us/26/32/b/2/B/joint_return_adjustment
+  phaseout_percentage: statute/26/32/b/1/phaseout_percentage
+  phaseout_amount: statute/26/32/b/2/A/phaseout_amount
+  joint_return_adjustment: statute/26/32/b/2/B/joint_return_adjustment
 
   # Number of qualifying children
-  num_qualifying_children: us/26/32/c/3/A/num_qualifying_children
+  num_qualifying_children: statute/26/32/c/3/A/num_qualifying_children
 }
 
 variable credit_reduction_amount {

@@ -75,17 +75,27 @@ Cosilico DSL is a purpose-built language for encoding tax and benefit rules. Key
 - **No hardcoded values**: All rates, thresholds, and amounts come from parameter references
 - **References block**: Variables are aliased by their statute paths before use in formulas
 - **Traceable**: Every rule links to legal citations
+- **Indexing-aware**: Inflation adjustments reference the indexing provision, not hardcoded current values
 
 ## File Organization
 
-**The path IS the legal citation.** Files live at statute paths:
+**The path IS the legal citation.** Files live at statute paths (separate repo per jurisdiction):
 
 ```
-us/irc/subtitle_a/chapter_1/subchapter_a/part_iv/subpart_c/§32/
+statute/26/32/                     # 26 USC §32 (EITC) in US repo
 ├── a/1/earned_income_credit.cosilico        # §32(a)(1)
 ├── a/2/A/initial_credit_amount.cosilico     # §32(a)(2)(A)
 ├── b/1/credit_percentage.yaml               # §32(b)(1) parameters
+├── b/2/A/amounts.yaml                       # §32(b)(2)(A) indexed amounts
+├── j/1/indexing_rule.yaml                   # §32(j)(1) cost-of-living adjustment
+└── j/2/rounding_rule.yaml                   # §32(j)(2) rounding rules
+
+# UK repo would use same structure:
+statute/FA2003/...                           # Finance Act 2003
 ```
+
+The path `statute/26/32/a/1/` maps directly to "26 USC §32(a)(1)".
+The `statute/` prefix distinguishes from `regs/` (regulations) and `guidance/` (IRS notices, etc.).
 
 ## DSL Syntax
 
@@ -93,9 +103,8 @@ us/irc/subtitle_a/chapter_1/subchapter_a/part_iv/subpart_c/§32/
 
 ```cosilico
 # Module path matches file location
-module us.irc.subtitle_a.chapter_1.subchapter_a.part_iv.subpart_c.§32.a.1
+module statute.26.32.a.1
 version "2024.1"
-jurisdiction us
 ```
 
 ### References Block (CRITICAL)
@@ -106,16 +115,17 @@ by tracing every variable use to a specific statute section.
 ```cosilico
 references {
   # Alias: statute_path/variable_name
-  earned_income: us/irc/subtitle_a/.../§32/c/2/A/earned_income
-  adjusted_gross_income: us/irc/subtitle_a/.../§62/a/adjusted_gross_income
-  filing_status: us/irc/subtitle_a/.../§1/filing_status
+  earned_income: statute/26/32/c/2/A/earned_income
+  adjusted_gross_income: statute/26/62/a/adjusted_gross_income
+  filing_status: statute/26/1/filing_status
 
   # Credit components from other subsections
-  initial_credit_amount: us/irc/subtitle_a/.../§32/a/2/A/initial_credit_amount
-  credit_reduction_amount: us/irc/subtitle_a/.../§32/a/2/B/credit_reduction_amount
+  initial_credit_amount: statute/26/32/a/2/A/initial_credit_amount
+  credit_reduction_amount: statute/26/32/a/2/B/credit_reduction_amount
 
   # Parameters can also be referenced
-  credit_percentage: us/irc/subtitle_a/.../§32/b/1/credit_percentage
+  credit_percentage: statute/26/32/b/1/credit_percentage
+  earned_income_amount: statute/26/32/b/2/A/earned_income_amount
 }
 ```
 
@@ -150,6 +160,90 @@ parameter(gov.irs.deductions.standard[filing_status])
 
 **IMPORTANT**: Do NOT hardcode numeric values. Always use parameter() references.
 
+## Inflation Indexing (CRITICAL)
+
+Many statutory dollar amounts are indexed for inflation. When encoding indexed parameters:
+
+1. **Identify the indexing provision**: Look for "cost-of-living adjustment" or "adjusted for inflation"
+2. **Reference the indexing rule**: The rule lives at its statutory location (e.g., §32(j) for EITC)
+3. **Encode base values, not current values**: The base year amount is the authoritative value
+4. **Three-tier precedence**: The system resolves values using:
+   - PUBLISHED: Official IRS values (Rev. Proc., etc.) - highest priority
+   - PROJECTED: Our calculations using forecast inflation
+   - CALCULATED: On-the-fly from base year + index
+
+### Example: EITC Indexing (§32(j))
+
+The EITC earned income amounts in §32(b)(2)(A) are indexed per §32(j)(1):
+
+```yaml
+# statute/26/32/b/2/A/amounts.yaml
+earned_income_amount:
+  reference: "26 USC § 32(b)(2)(A)"
+  indexing_rule: statute/26/32/j/1/indexing_rule  # Points to where indexing is defined
+
+  # Base values (the statute's original amounts from 2015)
+  base:
+    year: 2015
+    by_num_qualifying_children:
+      0: 6580
+      1: 9880
+      2: 13870
+      3: 13870
+
+  # Published values (from Rev. Proc.) - authoritative
+  published:
+    - effective_from: 2024-01-01
+      source: "Rev. Proc. 2023-34"
+      by_num_qualifying_children:
+        0: 7840
+        1: 12390
+        2: 17400
+        3: 17400
+```
+
+The indexing rule at §32(j)(1) references §1(f)(3) for the cost-of-living adjustment formula:
+
+```yaml
+# statute/26/32/j/1/indexing_rule.yaml
+indexing_rule:
+  description: EITC cost-of-living adjustment
+  reference: "26 USC § 32(j)(1)"
+  method:
+    type: cost_of_living_adjustment
+    reference_section: statute/26/1/f/3/cost_of_living_adjustment
+    base_year: 2015
+  rounding:
+    reference: "26 USC § 32(j)(2)(A)"
+    rule: round_down_to_nearest
+    amount: 10  # Nearest $10
+```
+
+### Why This Matters
+
+**BAD** (hardcoding current values - will be wrong next year):
+```cosilico
+# DON'T DO THIS
+let cap = match n_children {
+  0 => 7840,   # Where does this come from?
+  1 => 12390,  # How to update for 2025?
+  2 => 17400,
+  _ => 17400,
+}
+```
+
+**GOOD** (reference the parameter, system handles indexing):
+```cosilico
+# Reference parameter - system resolves correct value for any year
+let cap = earned_income_amount[n_children]  # Aliased in references block
+```
+
+When you see statutory text mentioning inflation adjustment, identify:
+1. Which dollar amounts are indexed
+2. Where the indexing rule is defined (e.g., "pursuant to section 1(f)(3)")
+3. The base year and base amounts
+4. Any special rounding rules
+
 ### Expressions
 
 **Arithmetic:** `+`, `-`, `*`, `/`
@@ -165,7 +259,7 @@ if condition then expr1 else expr2
 ## Complete Example: EITC (26 USC §32)
 
 ```cosilico
-# us/irc/subtitle_a/chapter_1/subchapter_a/part_iv/subpart_c/§32/a/1/earned_income_credit.cosilico
+# statute/26/32/a/1/earned_income_credit.cosilico
 #
 # 26 USC §32(a)(1) - Earned Income Credit
 #
@@ -174,22 +268,24 @@ if condition then expr1 else expr2
 # equal to the credit percentage of so much of the taxpayer's earned income
 # for the taxable year as does not exceed the earned income amount."
 
-module us.irc.subtitle_a.chapter_1.subchapter_a.part_iv.subpart_c.§32.a.1
+module statute.26.32.a.1
 version "2024.1"
-jurisdiction us
 
 references {
   # Inputs from other IRC sections
-  earned_income: us/irc/subtitle_a/.../§32/c/2/A/earned_income
-  adjusted_gross_income: us/irc/subtitle_a/.../§62/a/adjusted_gross_income
-  filing_status: us/irc/subtitle_a/.../§1/filing_status
+  earned_income: statute/26/32/c/2/A/earned_income
+  adjusted_gross_income: statute/26/62/a/adjusted_gross_income
+  filing_status: statute/26/1/filing_status
 
   # Eligibility from §32(c)(1)
-  is_eligible_individual: us/irc/subtitle_a/.../§32/c/1/A/i/is_eligible_individual
+  is_eligible_individual: statute/26/32/c/1/A/i/is_eligible_individual
 
   # Credit components from §32(a)(2)
-  initial_credit_amount: us/irc/subtitle_a/.../§32/a/2/A/initial_credit_amount
-  credit_reduction_amount: us/irc/subtitle_a/.../§32/a/2/B/credit_reduction_amount
+  initial_credit_amount: statute/26/32/a/2/A/initial_credit_amount
+  credit_reduction_amount: statute/26/32/a/2/B/credit_reduction_amount
+
+  # AGI limit (indexed parameter from §32(b)(2)(A))
+  agi_limit: statute/26/32/b/2/A/agi_limit
 }
 
 variable earned_income_credit {
@@ -214,19 +310,18 @@ variable earned_income_credit {
 ## Phase-In Calculation (§32(a)(2)(A))
 
 ```cosilico
-# us/irc/.../§32/a/2/A/initial_credit_amount.cosilico
+# statute/26/32/a/2/A/initial_credit_amount.cosilico
 
-module us.irc.subtitle_a.chapter_1.subchapter_a.part_iv.subpart_c.§32.a.2.A
+module statute.26.32.a.2.A
 version "2024.1"
-jurisdiction us
 
 references {
-  earned_income: us/irc/.../§32/c/2/A/earned_income
-  num_qualifying_children: us/irc/.../§32/c/3/A/num_qualifying_children
+  earned_income: statute/26/32/c/2/A/earned_income
+  num_qualifying_children: statute/26/32/c/3/A/num_qualifying_children
 
-  # Parameters from §32(b)
-  credit_percentage: us/irc/.../§32/b/1/credit_percentage
-  earned_income_amount: us/irc/.../§32/b/2/A/earned_income_amount
+  # Parameters from §32(b) - indexed annually per §32(j)
+  credit_percentage: statute/26/32/b/1/credit_percentage
+  earned_income_amount: statute/26/32/b/2/A/earned_income_amount  # Indexed parameter
 }
 
 variable initial_credit_amount {
@@ -237,6 +332,7 @@ variable initial_credit_amount {
 
   formula {
     # Get parameters indexed by number of qualifying children
+    # earned_income_amount is resolved via indexing system (PUBLISHED > PROJECTED > CALCULATED)
     let rate = credit_percentage[num_qualifying_children]
     let cap = earned_income_amount[num_qualifying_children]
 
@@ -248,23 +344,25 @@ variable initial_credit_amount {
 
 ## Important Rules
 
-1. **MODULE PATH = FILE PATH**: Module declaration matches the statute-organized file location
+1. **MODULE PATH = FILE PATH**: Module declaration matches the statute-organized file location (e.g., `statute.26.32.a.1`)
 2. **REFERENCES BLOCK**: Declare all external variables/parameters with statute paths
 3. **NO HARDCODED VALUES**: Use parameter() or references for all rates, amounts, thresholds
 4. **ONE VARIABLE PER CLAUSE**: Each statutory subsection gets its own file/variable
 5. **USE ALIASES IN FORMULAS**: After declaring in references, use the alias names directly
+6. **IDENTIFY INDEXING**: Look for inflation adjustment language and reference the indexing provision
 
 ## Your Task
 
 1. Read the statutory text carefully
 2. Identify the statute section (e.g., "26 USC § 32(a)(1)")
-3. Create module path matching the statute structure
-4. Declare references for all inputs and dependencies
-5. Generate DSL code using references and parameters - NO hardcoded values
-6. Use the `execute_dsl` tool to test your implementation
-7. When you reach 95%+ accuracy, use `submit_final_code`
+3. Create module path matching the statute structure (e.g., `statute.26.32.a.1`)
+4. Identify any inflation-indexed amounts and their indexing provisions
+5. Declare references for all inputs and dependencies using statute paths (e.g., `statute/26/32/b/2/A/earned_income_amount`)
+6. Generate DSL code using references and parameters - NO hardcoded values
+7. Use the `execute_dsl` tool to test your implementation
+8. When you reach 95%+ accuracy, use `submit_final_code`
 
-The parameter values are already defined in the system. Your job is to write the FORMULA that correctly combines them using proper references."""
+The parameter values are already defined in the system. Your job is to write the FORMULA that correctly combines them using proper references. The indexing system handles resolving the correct values for any tax year."""
 
 
 class DSLAgentTrainingLoop:

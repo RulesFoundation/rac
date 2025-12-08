@@ -7,18 +7,17 @@
 # For EITC purposes, the number of qualifying children determines which
 # row of the §32(b) table applies.
 
-module us.26.32.c.3.A
+module statute.26.32.c.3.A
 version "2024.1"
-jurisdiction us
 
 references {
   # Qualifying child definition from §152(c)
-  is_qualifying_child: us/26/152/c/is_qualifying_child
+  is_qualifying_child: statute/26/152/c/is_qualifying_child
 
   # EITC-specific exclusions
-  child_is_married_filing_joint: us/26/32/c/3/B/child_is_married_filing_joint
-  child_meets_place_of_abode: us/26/32/c/3/C/child_meets_place_of_abode
-  child_has_valid_tin: us/26/32/c/3/D/i/child_has_valid_tin
+  child_is_married_filing_joint: statute/26/32/c/3/B/child_is_married_filing_joint
+  child_meets_place_of_abode: statute/26/32/c/3/C/child_meets_place_of_abode
+  child_has_valid_tin: statute/26/32/c/3/D/i/child_has_valid_tin
 }
 
 variable num_qualifying_children {
