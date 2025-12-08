@@ -200,11 +200,15 @@ class DSLAgentTrainingLoop:
         target_accuracy: float = 0.95,
         api_key: str | None = None,
         parameters: dict | None = None,
+        system_prompt: str | None = None,  # Allow evolved prompt injection
     ):
         self.model = model
         self.max_iterations = max_iterations
         self.target_accuracy = target_accuracy
         self.client = anthropic.Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
+
+        # System prompt - use provided or default
+        self.system_prompt = system_prompt or DSL_SYSTEM_PROMPT
 
         # Execution components - use DSL executor
         self.executor = DSLExecutor(parameters=parameters or get_default_parameters())
@@ -413,7 +417,7 @@ Start by generating your initial DSL code and testing it."""
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=4096,
-                system=DSL_SYSTEM_PROMPT,
+                system=self.system_prompt,  # Use instance's prompt (may be evolved)
                 tools=TOOLS,
                 messages=messages
             )
