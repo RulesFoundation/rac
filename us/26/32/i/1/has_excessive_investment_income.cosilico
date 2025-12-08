@@ -1,0 +1,56 @@
+# 26 USC §32(i)(1) - Denial of Credit for Excessive Investment Income
+#
+# "No credit shall be allowed under subsection (a) for the taxable year if
+# the aggregate amount of disqualified income of the taxpayer for the taxable
+# year exceeds $10,000."
+#
+# Note: The $10,000 threshold is inflation-adjusted per §32(j)(1)(B)(iii)
+
+module us.26.32.i.1
+version "2024.1"
+jurisdiction us
+
+references {
+  # Components of disqualified income from §32(i)(2)
+  interest_income: us/irc/subtitle_a/chapter_1/subchapter_b/part_i/§61/a/4/interest_income
+  dividend_income: us/irc/subtitle_a/chapter_1/subchapter_b/part_i/§61/a/7/dividend_income
+  tax_exempt_interest: us/26/103/tax_exempt_interest
+  net_rent_royalty_income: us/26/32/i/2/C/net_rent_royalty_income
+  capital_gain_net_income: us/26/1222/11/capital_gain_net_income
+  net_passive_income: us/26/32/i/2/E/net_passive_income
+
+  # Threshold parameter
+  disqualified_income_limit: us/26/32/i/1/disqualified_income_limit
+}
+
+variable disqualified_income {
+  entity TaxUnit
+  period Year
+  dtype Money
+  unit "USD"
+  label "Disqualified Income"
+  description "Sum of investment income types that may disqualify from EITC per 26 USC §32(i)(2)"
+
+  formula {
+    return (
+      interest_income                # §32(i)(2)(A)
+      + dividend_income              # §32(i)(2)(A)
+      + tax_exempt_interest          # §32(i)(2)(B)
+      + net_rent_royalty_income      # §32(i)(2)(C)
+      + capital_gain_net_income      # §32(i)(2)(D)
+      + net_passive_income           # §32(i)(2)(E)
+    )
+  }
+}
+
+variable has_excessive_investment_income {
+  entity TaxUnit
+  period Year
+  dtype Bool
+  label "Disqualified by Investment Income"
+  description "Whether investment income exceeds the limit per 26 USC §32(i)(1)"
+
+  formula {
+    return disqualified_income > disqualified_income_limit
+  }
+}

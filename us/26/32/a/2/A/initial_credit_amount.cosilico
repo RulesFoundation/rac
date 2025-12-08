@@ -1,0 +1,39 @@
+# 26 USC §32(a)(2)(A) - Initial Credit Amount (Phase-In)
+#
+# "The amount determined under paragraph (1) for any taxable year is the
+# credit percentage of so much of the taxpayer's earned income for such
+# taxable year as does not exceed the earned income amount."
+
+module us.26.32.a.2.A
+version "2024.1"
+jurisdiction us
+
+references {
+  # Input: earned income from §32(c)(2)
+  earned_income: us/26/32/c/2/A/earned_income
+
+  # Parameters from §32(b) - the percentages and amounts table
+  credit_percentage: us/26/32/b/1/credit_percentage
+  earned_income_amount: us/26/32/b/2/A/earned_income_amount
+
+  # Number of qualifying children affects which row of the table we use
+  num_qualifying_children: us/26/32/c/3/A/num_qualifying_children
+}
+
+variable initial_credit_amount {
+  entity TaxUnit
+  period Year
+  dtype Money
+  unit "USD"
+  label "EITC Phase-In Amount"
+  description "Credit percentage of earned income up to the earned income amount per 26 USC §32(a)(2)(A)"
+
+  formula {
+    # Get parameters indexed by number of qualifying children
+    let rate = credit_percentage[num_qualifying_children]
+    let cap = earned_income_amount[num_qualifying_children]
+
+    # Credit = rate × min(earned_income, cap)
+    return rate * min(earned_income, cap)
+  }
+}

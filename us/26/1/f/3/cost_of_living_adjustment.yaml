@@ -1,0 +1,98 @@
+# 26 USC §1(f)(3) - Cost-of-Living Adjustment
+#
+# This is THE central definition of how tax parameters are indexed for inflation.
+# Many other provisions reference this section for their indexing rules.
+#
+# "(3) COST-OF-LIVING ADJUSTMENT.—For purposes of this subsection—
+# (A) IN GENERAL.—The cost-of-living adjustment for any calendar year is the
+#     percentage (if any) by which—
+#     (i) the C-CPI-U for the preceding calendar year, exceeds
+#     (ii) the CPI for calendar year 2016.
+#
+# (B) C-CPI-U.—For purposes of subparagraph (A), the C-CPI-U for any calendar
+#     year is the average of the C-CPI-U as of the close of the 12-month period
+#     ending on August 31 of such calendar year."
+#
+# Note: TCJA (2017) changed from CPI-U to C-CPI-U for 2018-2025.
+# If TCJA sunsets, reverts to CPI-U.
+
+cost_of_living_adjustment:
+  reference: "26 USC § 1(f)(3)"
+  description: Central definition of cost-of-living adjustment for tax indexing
+
+  # Which index to use (changes over time)
+  underlying_index:
+    - effective_from: 1993-01-01
+      effective_to: 2017-12-31
+      index: cpi_u
+      index_data: data/indices/cpi_u/historical.yaml
+      reference: "26 USC § 1(f)(3) (pre-TCJA)"
+      notes: Used CPI-U before TCJA
+
+    - effective_from: 2018-01-01
+      effective_to: 2025-12-31
+      index: chained_cpi_u
+      index_data: data/indices/chained_cpi_u/historical.yaml
+      reference: "26 USC § 1(f)(3)(B) as amended by TCJA § 11002"
+      notes: TCJA switched to C-CPI-U (grows ~0.25% slower annually)
+
+    - effective_from: 2026-01-01
+      index: cpi_u
+      index_data: data/indices/cpi_u/historical.yaml
+      reference: "26 USC § 1(f)(3) (post-TCJA sunset)"
+      uncertainty: tcja_sunset
+      notes: |
+        If TCJA provisions sunset as scheduled, indexing reverts to CPI-U.
+        This represents significant policy uncertainty for 2026+ projections.
+
+  # The formula for computing the adjustment
+  formula:
+    reference: "26 USC § 1(f)(3)(A)"
+
+    # Standard base year (most provisions use 2016)
+    default_base_year: 2016
+
+    # The actual calculation
+    calculation: |
+      adjustment = (index_current_year - index_base_year) / index_base_year
+
+      Where:
+      - index_current_year = Average index through August of current year
+      - index_base_year = Average index for base year (usually 2016)
+
+      Many provisions substitute different base years per their specific
+      indexing rules (e.g., EITC uses 2015 per §32(j)(1)(A)(ii)).
+
+  # Which index values to use
+  index_timing:
+    reference: "26 USC § 1(f)(3)(B)"
+    rule: |
+      Use the average of the index "as of the close of the 12-month period
+      ending on August 31" of the applicable year.
+
+      In practice: Use annual average through August, or simplified as
+      the August value of the index.
+
+  # Referenced by many other provisions
+  referenced_by:
+    - us/irc/.../§32/j/1  # EITC
+    - us/irc/.../§24/d/1  # Child Tax Credit
+    - us/irc/.../§63/c/4  # Standard Deduction
+    - us/irc/.../§21/e    # Child and Dependent Care Credit
+    - us/irc/.../§23/b/4  # Adoption Credit
+    - us/irc/.../§25A/h/1 # Education Credits
+    - us/irc/.../§36B/b/3/A/ii  # Premium Tax Credit
+    - us/irc/.../§151/d/4  # Dependent Exemption (if restored)
+    # ... many more
+
+  tcja_impact: |
+    The Tax Cuts and Jobs Act (2017) changed §1(f)(3) to use C-CPI-U instead
+    of CPI-U starting in 2018. Because C-CPI-U grows more slowly (~0.25%/year
+    less), this results in:
+
+    - Slower bracket creep (brackets don't keep up with wages as well)
+    - Higher effective tax rates over time
+    - Estimated $134B additional revenue over 10 years (JCT estimate)
+
+    If TCJA sunsets in 2026, indexing reverts to CPI-U, resulting in faster
+    bracket growth going forward.

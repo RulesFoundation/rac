@@ -18,16 +18,23 @@ calculations/
 
 Cosilico organizes by statutory citation:
 ```
-cosilico-us/
-└── irc/
-    └── subtitle_a/chapter_1/subchapter_a/part_iv/subpart_c/§32/
-        ├── (a)/(1)/variables/earned_income_credit.cosilico
-        ├── (a)/(2)/(A)/variables/initial_credit_amount.cosilico
-        ├── (a)/(2)/(B)/variables/phaseout_income.cosilico
-        └── (b)/(1)/parameters/credit_percentage.yaml
+us/
+└── title_26/              # 26 USC (Internal Revenue Code)
+    └── §32/               # Section 32 - EITC
+        ├── a/1/earned_income_credit.cosilico     # §32(a)(1)
+        ├── a/2/A/initial_credit_amount.cosilico  # §32(a)(2)(A)
+        ├── a/2/B/credit_reduction_amount.cosilico # §32(a)(2)(B)
+        ├── b/1/credit_percentage.yaml            # §32(b)(1) parameters
+        ├── b/2/A/amounts.yaml                    # §32(b)(2)(A) parameters
+        ├── c/2/A/earned_income.cosilico          # §32(c)(2)(A) definition
+        ├── i/1/disqualified_income_limit.yaml    # §32(i)(1) parameter
+        ├── j/1/indexing_rule.yaml                # §32(j)(1) indexing
+        └── j/2/rounding_rules.yaml               # §32(j)(2) rounding
 ```
 
-**The path IS the legal citation.** No mapping tables, no metadata - the filesystem structure embeds the law.
+**The path IS the legal citation.** `us/26/32/a/1/` maps to "26 USC §32(a)(1)".
+
+Section numbers are unique within a title, so we don't need the full subtitle/chapter/subchapter hierarchy.
 
 ## Why This Matters
 
@@ -35,7 +42,7 @@ cosilico-us/
 
 ```python
 # Variable at:
-# us/irc/subtitle_a/chapter_1/subchapter_a/part_iv/subpart_c/§32/(a)/(1)/earned_income_credit
+# us/26/32/a/1/earned_income_credit
 
 # Maps directly to:
 # 26 USC §32(a)(1)
@@ -51,8 +58,8 @@ When a regulator asks "where does this calculation come from?", the answer is th
 
 When Congress amends §32(b)(2), the git diff shows exactly what changed:
 ```diff
-- us/irc/.../§32/(b)/(2)/parameters/earned_income_amount.yaml
-+ us/irc/.../§32/(b)/(2)/parameters/earned_income_amount.yaml
+- us/26/32/b/2/parameters/earned_income_amount.yaml
++ us/26/32/b/2/parameters/earned_income_amount.yaml
 ```
 
 ### 4. AI Training Signal
@@ -67,33 +74,33 @@ Each statutory clause gets exactly one variable. Complex provisions become compo
 
 **§32(a)(1)** - "there shall be allowed as a credit..."
 ```
-§32/(a)/(1)/variables/earned_income_credit.cosilico
+§32/a/1/variables/earned_income_credit.cosilico
 ```
 
 **§32(a)(2)(A)** - "credit percentage of earned income..."
 ```
-§32/(a)/(2)/(A)/variables/initial_credit_amount.cosilico
+§32/a/2/A/variables/initial_credit_amount.cosilico
 ```
 
 **§32(a)(2)(B)** - "the greater of AGI or earned income..."
 ```
-§32/(a)/(2)/(B)/variables/phaseout_income.cosilico
+§32/a/2/B/variables/phaseout_income.cosilico
 ```
 
 **§32(b)(1)** - Credit percentages (parameter, not formula)
 ```
-§32/(b)/(1)/parameters/credit_percentage.yaml
+§32/b/1/parameters/credit_percentage.yaml
 ```
 
 **§32(c)(1)(A)(i)** - "has qualifying child"
 ```
-§32/(c)/(1)/(A)/(i)/variables/has_qualifying_child.cosilico
+§32/c/1/A/i/variables/has_qualifying_child.cosilico
 ```
 
 ### The Final Credit Composes Everything
 
 ```cosilico
-# us/irc/subtitle_a/chapter_1/subchapter_a/part_iv/subpart_c/§32/a/1/earned_income_credit.cosilico
+# us/26/32/a/1/earned_income_credit.cosilico
 #
 # 26 USC §32(a)(1)
 #
@@ -109,11 +116,11 @@ jurisdiction us
 
 references {
   # Eligibility from §32(c)(1)
-  is_eligible_individual: us/irc/.../§32/c/1/A/i/is_eligible_individual
+  is_eligible_individual: us/26/32/c/1/A/i/is_eligible_individual
 
   # Credit components from §32(a)(2)
-  initial_credit_amount: us/irc/.../§32/a/2/A/initial_credit_amount
-  credit_reduction_amount: us/irc/.../§32/a/2/B/credit_reduction_amount
+  initial_credit_amount: us/26/32/a/2/A/initial_credit_amount
+  credit_reduction_amount: us/26/32/a/2/B/credit_reduction_amount
 }
 
 variable earned_income_credit {

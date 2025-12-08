@@ -1,0 +1,68 @@
+# 26 USC §32(j)(1) - Cost-of-Living Adjustments
+#
+# "(A) IN GENERAL.—In the case of any taxable year beginning after 2015, each
+# of the dollar amounts in subsections (b)(2) and (i)(1) shall be increased by
+# an amount equal to—
+#   (i) such dollar amount, multiplied by
+#   (ii) the cost-of-living adjustment determined under section 1(f)(3) for the
+#        calendar year in which the taxable year begins, determined by
+#        substituting 'calendar year 2015' for 'calendar year 2016' in
+#        subparagraph (A)(ii) thereof.
+#
+# (B) ADJUSTMENT FOR JOINT RETURNS.—In the case of the $5,000 amount in
+# subsection (b)(2)(B), subparagraph (A) shall be applied by substituting
+# 'calendar year 2008' for 'calendar year 2015'."
+
+indexing_rule:
+  reference: "26 USC § 32(j)(1)"
+  description: EITC cost-of-living adjustment
+
+  # Which parameters this indexing rule applies to
+  applies_to:
+    # Subsection (b)(2) - Amounts
+    - path: us/26/32/b/2/A/earned_income_amount
+      base_year: 2015
+      rounding_rule: us/26/32/j/2/A  # Nearest $10
+
+    - path: us/26/32/b/2/A/phaseout_amount
+      base_year: 2015
+      rounding_rule: us/26/32/j/2/A  # Nearest $10
+
+    # Subsection (b)(2)(B) - Joint return adjustment (different base year!)
+    - path: us/26/32/b/2/B/joint_return_adjustment
+      base_year: 2008  # Special per §32(j)(1)(B)
+      rounding_rule: us/26/32/j/2/A  # Nearest $10
+
+    # Subsection (i)(1) - Disqualified income threshold
+    - path: us/26/32/i/1/disqualified_income_limit
+      base_year: 2015
+      rounding_rule: us/26/32/j/2/B  # Nearest $50
+
+  # The indexing method
+  method:
+    type: cost_of_living_adjustment
+    reference_section: us/irc/subtitle_a/chapter_1/subchapter_a/part_i/§1/f/3
+
+    # Formula: new_value = base_value * (CPI_year / CPI_base_year)
+    formula: |
+      Let CPI_base = August C-CPI-U for base_year
+      Let CPI_current = August C-CPI-U for current_year
+
+      adjustment_factor = (CPI_current - CPI_base) / CPI_base
+      indexed_value = base_value * (1 + adjustment_factor)
+      final_value = apply_rounding(indexed_value, rounding_rule)
+
+  # Effective dates
+  effective:
+    - from: 2016-01-01  # First year of indexing (taxable years beginning after 2015)
+      to: null  # Ongoing
+      index: chained_cpi_u
+      reference: "26 USC § 1(f)(3) as amended by TCJA"
+
+  notes: |
+    The base year substitution ("2015" instead of "2016") means EITC amounts
+    use 2015 as the reference year for calculating inflation adjustments.
+
+    The joint return adjustment uses 2008 as base year per §32(j)(1)(B),
+    because that provision was added by the American Recovery and
+    Reinvestment Act of 2009.

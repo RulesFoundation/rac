@@ -1,0 +1,52 @@
+# 26 USC §32(c)(1)(A)(i) - Eligible Individual (with Qualifying Child)
+#
+# "The term 'eligible individual' means—
+#   (i) in the case of an eligible individual who has 1 or more qualifying
+#       children, an individual who has a qualifying child for such taxable year"
+
+module us.26.32.c.1.A.i
+version "2024.1"
+jurisdiction us
+
+references {
+  # From §32(c)(3) - qualifying child count
+  num_qualifying_children: us/26/32/c/3/A/num_qualifying_children
+
+  # From §32(c)(1)(A)(ii) - eligibility without children
+  meets_no_child_requirements: us/26/32/c/1/A/ii/meets_no_child_requirements
+
+  # Disqualifying conditions from other subsections
+  is_qualifying_child_of_other: us/26/32/c/1/B/is_qualifying_child_of_other
+  has_foreign_earned_income: us/26/32/c/1/C/has_foreign_earned_income
+  is_nonresident_alien: us/26/32/c/1/D/is_nonresident_alien
+  missing_taxpayer_tin: us/26/32/c/1/E/i/missing_taxpayer_tin
+  missing_spouse_tin: us/26/32/c/1/E/ii/missing_spouse_tin
+
+  # Investment income disqualification from §32(i)
+  has_excessive_investment_income: us/26/32/i/1/has_excessive_investment_income
+}
+
+variable is_eligible_individual {
+  entity TaxUnit
+  period Year
+  dtype Bool
+  label "Eligible for EITC"
+  description "Whether individual meets all EITC eligibility requirements per 26 USC §32(c)(1)"
+
+  formula {
+    # Must have qualifying children OR meet no-child requirements
+    let meets_child_requirement = (num_qualifying_children > 0) or meets_no_child_requirements
+
+    # Check all disqualifying conditions
+    let not_disqualified = (
+      not is_qualifying_child_of_other      # §32(c)(1)(B)
+      and not has_foreign_earned_income     # §32(c)(1)(C)
+      and not is_nonresident_alien          # §32(c)(1)(D)
+      and not missing_taxpayer_tin          # §32(c)(1)(E)(i)
+      and not missing_spouse_tin            # §32(c)(1)(E)(ii)
+      and not has_excessive_investment_income  # §32(i)
+    )
+
+    return meets_child_requirement and not_disqualified
+  }
+}

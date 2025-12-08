@@ -1,0 +1,53 @@
+# 26 USC §32(a)(2)(B) - Credit Reduction Amount (Phase-Out)
+#
+# "The amount determined under subparagraph (A) shall be reduced (but not
+# below zero) by the phaseout percentage of so much of the greater of—
+#   (i) the adjusted gross income, or
+#   (ii) the earned income,
+# of the taxpayer for the taxable year as exceeds the phaseout amount."
+
+module us.26.32.a.2.B
+version "2024.1"
+jurisdiction us
+
+references {
+  # Inputs
+  earned_income: us/26/32/c/2/A/earned_income
+  adjusted_gross_income: us/26/62/a/adjusted_gross_income
+  filing_status: us/26/1/filing_status
+
+  # Parameters from §32(b)
+  phaseout_percentage: us/26/32/b/1/phaseout_percentage
+  phaseout_amount: us/26/32/b/2/A/phaseout_amount
+  joint_return_adjustment: us/26/32/b/2/B/joint_return_adjustment
+
+  # Number of qualifying children
+  num_qualifying_children: us/26/32/c/3/A/num_qualifying_children
+}
+
+variable credit_reduction_amount {
+  entity TaxUnit
+  period Year
+  dtype Money
+  unit "USD"
+  label "EITC Phase-Out Reduction"
+  description "Reduction of credit based on income exceeding phaseout threshold per 26 USC §32(a)(2)(B)"
+
+  formula {
+    # Use the greater of AGI or earned income
+    let income = max(adjusted_gross_income, earned_income)
+
+    # Get parameters indexed by number of qualifying children
+    let rate = phaseout_percentage[num_qualifying_children]
+    let threshold = phaseout_amount[num_qualifying_children]
+
+    # Joint filers get higher threshold per §32(b)(2)(B)
+    let adjusted_threshold = if filing_status == JOINT then
+      threshold + joint_return_adjustment
+    else
+      threshold
+
+    # Reduction = rate × (income - threshold), but not below zero
+    return max(0, rate * (income - adjusted_threshold))
+  }
+}

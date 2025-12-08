@@ -123,7 +123,7 @@ def income_tax(tax_unit, period):
 Files use `.cosilico` extension and follow this statute-organized structure:
 
 ```
-us/irc/subtitle_a/chapter_1/subchapter_a/part_iv/subpart_c/§32/
+us/26/32/
 ├── a/1/earned_income_credit.cosilico        # §32(a)(1)
 ├── a/2/A/initial_credit_amount.cosilico     # §32(a)(2)(A)
 ├── a/2/B/credit_reduction_amount.cosilico   # §32(a)(2)(B)
@@ -136,20 +136,20 @@ us/irc/subtitle_a/chapter_1/subchapter_a/part_iv/subpart_c/§32/
 **The path IS the legal citation.** Folder structure mirrors statute structure.
 
 ```cosilico
-# us/irc/subtitle_a/chapter_1/subchapter_a/part_iv/subpart_c/§32/a/1/earned_income_credit.cosilico
+# us/26/32/a/1/earned_income_credit.cosilico
 
 # File metadata
-module us.irc.subtitle_a.chapter_1.subchapter_a.part_iv.subpart_c.§32.a.1
+module us.26.32.a.1
 version "2024.1"
 jurisdiction us
 
 # References: alias variables by their statute paths
 references {
-  earned_income: us/irc/subtitle_a/chapter_1/subchapter_a/part_iv/subpart_c/§32/c/2/A/earned_income
+  earned_income: us/26/32/c/2/A/earned_income
   adjusted_gross_income: us/irc/subtitle_a/chapter_1/subchapter_b/part_i/§62/a/adjusted_gross_income
   filing_status: us/irc/subtitle_a/chapter_1/subchapter_a/part_i/§1/filing_status
-  initial_credit_amount: us/irc/subtitle_a/chapter_1/subchapter_a/part_iv/subpart_c/§32/a/2/A/initial_credit_amount
-  credit_reduction_amount: us/irc/subtitle_a/chapter_1/subchapter_a/part_iv/subpart_c/§32/a/2/B/credit_reduction_amount
+  initial_credit_amount: us/26/32/a/2/A/initial_credit_amount
+  credit_reduction_amount: us/26/32/a/2/B/credit_reduction_amount
 }
 
 # One variable per statutory clause
@@ -177,11 +177,11 @@ The `references` block maps local aliases to statute paths. This:
 ```cosilico
 references {
   # Alias: statute_path/variable_name
-  earned_income: us/irc/.../§32/c/2/A/earned_income
-  filing_status: us/irc/.../§1/filing_status
+  earned_income: us/26/32/c/2/A/earned_income
+  filing_status: us/26/1/filing_status
 
   # Parameters can also be referenced
-  credit_percentage: us/irc/.../§32/b/1/credit_percentage
+  credit_percentage: us/26/32/b/1/credit_percentage
 }
 ```
 
