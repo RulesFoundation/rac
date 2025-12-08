@@ -94,10 +94,12 @@ class RLTrainer:
                     verbose=verbose,
                 )
 
+                cost = result.get("cost", {})
                 iteration_results["provisions"][provision] = {
                     "success": result["success"],
                     "accuracy": result["accuracy"],
                     "iterations": result["iterations"],
+                    "cost_usd": cost.get("total_cost_usd", 0),
                 }
 
                 if result["success"]:
@@ -106,6 +108,11 @@ class RLTrainer:
                 self.state.total_provisions_attempted += 1
                 if result["success"]:
                     self.state.total_successes += 1
+
+                # Track costs
+                self.state.total_input_tokens += cost.get("input_tokens", 0)
+                self.state.total_output_tokens += cost.get("output_tokens", 0)
+                self.state.total_cost_usd += cost.get("total_cost_usd", 0)
 
             # Record iteration results
             iteration_results["success_rate"] = (
@@ -117,6 +124,7 @@ class RLTrainer:
                 print(f"\nIteration {outer_iter + 1} complete:")
                 print(f"  Pass rate: {iteration_results['successes']}/{iteration_results['total']}")
                 print(f"  Cumulative success rate: {self.state.success_rate():.1%}")
+                print(f"  Total cost so far: ${self.state.total_cost_usd:.4f}")
 
             # Save checkpoint
             self._save_checkpoint(outer_iter + 1)
@@ -239,6 +247,7 @@ def main():
     print(f"Total successes: {state.total_successes}")
     print(f"Overall success rate: {state.success_rate():.1%}")
     print(f"Accumulated examples: {len(state.successful_examples)}")
+    print(f"Total cost: ${state.total_cost_usd:.4f}")
 
 
 if __name__ == "__main__":

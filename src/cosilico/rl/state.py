@@ -38,6 +38,11 @@ class LearningState:
     total_successes: int = 0
     iteration_history: list[dict] = field(default_factory=list)
 
+    # Cost tracking
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    total_cost_usd: float = 0.0
+
     def success_rate(self) -> float:
         if self.total_provisions_attempted == 0:
             return 0.0
@@ -52,4 +57,7 @@ class LearningState:
             "n_examples": len(self.successful_examples),
             "n_failure_patterns": len(self.failure_patterns),
             "iteration_history": self.iteration_history,
+            "total_input_tokens": self.total_input_tokens,
+            "total_output_tokens": self.total_output_tokens,
+            "total_cost_usd": self.total_cost_usd,
         }
