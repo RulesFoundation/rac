@@ -1,0 +1,65 @@
+# Medicaid Take-up Rates
+#
+# Medicaid participation among eligible individuals.
+# Particularly important for expansion populations post-ACA.
+
+medicaid_takeup:
+  description: Fraction of eligible individuals enrolled in Medicaid
+
+  estimates:
+    - rate: 0.85
+      source: "Medicaid and CHIP Payment and Access Commission 2023"
+      url: "https://www.macpac.gov/"
+      population: all_eligible
+      year: 2022
+      notes: "Overall participation including continuous enrollment effects"
+
+    - rate: 0.93
+      source: "MACPAC 2023"
+      population: children
+      notes: "Very high take-up for children due to CHIP outreach"
+
+    - rate: 0.76
+      source: "MACPAC 2023"
+      population: expansion_adults
+      notes: "Adults in expansion states (138% FPL threshold)"
+
+    - rate: 0.62
+      source: "KFF 2022"
+      url: "https://www.kff.org/"
+      population: eligible_but_non_expansion_state
+      notes: "Coverage gap population in non-expansion states"
+
+    - rate: 0.55
+      source: "Sommers et al. 2017"
+      population: eligible_unaware
+      notes: "Many don't know they qualify"
+
+  state_variation:
+    expansion_states:
+      average_rate: 0.83
+      notes: "States that expanded Medicaid under ACA"
+    non_expansion_states:
+      average_rate: 0.71
+      notes: "States that did not expand; narrower eligibility"
+
+  varies_by:
+    - variable: state_expansion_status
+      effect: "Higher in expansion states"
+    - variable: age
+      effect: "Higher for children and elderly"
+    - variable: income_to_poverty_ratio
+      effect: "Higher at lower incomes"
+    - variable: health_status
+      effect: "Higher for those with health needs"
+    - variable: prior_coverage
+      effect: "Higher if previously enrolled"
+
+  applies_to: statute/42/1396/medicaid_eligible
+
+  churn:
+    description: "People cycle on and off Medicaid due to income volatility"
+    annual_disenrollment_rate: 0.25
+    annual_reenrollment_rate: 0.40
+    source: "Sommers 2017, NBER"
+    notes: "Continuous enrollment policies reduce churn"

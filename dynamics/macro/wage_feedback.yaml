@@ -1,0 +1,55 @@
+# Macroeconomic Feedback: Wage Response
+#
+# In general equilibrium, changes in labor supply affect wages.
+# This is important for large-scale policy changes.
+#
+# Note: This is partial general equilibrium. Full GE would require
+# integrating with a macro model.
+
+wage_feedback:
+  description: How aggregate wage rates respond to labor supply shifts
+
+  labor_demand_elasticity:
+    description: Percent change in wages per percent change in labor supply
+    estimate: -0.30
+    confidence_interval: [-0.50, -0.15]
+    source: "Hamermesh 1993, Labor Demand"
+    notes: "Negative because more supply → lower wages (standard downward-sloping demand)"
+
+  thresholds:
+    description: Only apply wage feedback for large aggregate changes
+    min_labor_supply_change: 0.01  # 1% aggregate change
+    rationale: "Small policy changes don't meaningfully affect equilibrium wages"
+
+  application:
+    method: iterative
+    steps:
+      - "Calculate labor supply response to policy"
+      - "If aggregate_change > threshold, calculate wage adjustment"
+      - "Re-run labor supply with adjusted wages"
+      - "Iterate until convergence"
+    convergence_threshold: 0.001
+    max_iterations: 10
+
+  regional_variation:
+    description: "Wage effects may be localized for state policies"
+    state_level_policies:
+      elasticity_multiplier: 0.5  # Half the national effect due to mobility
+      source: "Bound & Holzer 2000"
+    federal_policies:
+      elasticity_multiplier: 1.0
+
+  caveats:
+    - "Assumes closed economy (no trade effects)"
+    - "Does not model capital adjustment"
+    - "Constant returns to scale assumption"
+    - "Short-run vs. long-run elasticities may differ"
+
+  use_cases:
+    appropriate:
+      - "Large universal programs (UBI)"
+      - "Major tax reform"
+      - "Immigration policy"
+    inappropriate:
+      - "Small targeted tax credits"
+      - "State-level benefit changes"

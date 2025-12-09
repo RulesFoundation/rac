@@ -1,0 +1,81 @@
+# SNAP Take-up Rates
+#
+# Supplemental Nutrition Assistance Program (food stamps) participation
+# among eligible households. Varies significantly by population and state.
+
+snap_takeup:
+  description: Fraction of eligible households participating in SNAP
+
+  estimates:
+    - rate: 0.82
+      source: "USDA FNS Reaching Those in Need 2023"
+      url: "https://www.fns.usda.gov/snap/participation-rates"
+      population: all_eligible
+      year: 2020
+      notes: "National average participation rate"
+
+    - rate: 0.91
+      source: "USDA FNS 2023"
+      population: income_below_50_percent_poverty
+      notes: "Very low income households participate at high rates"
+
+    - rate: 0.75
+      source: "USDA FNS 2023"
+      population: income_100_to_130_percent_poverty
+      notes: "Near eligibility threshold, smaller benefit"
+
+    - rate: 0.72
+      source: "USDA FNS 2023"
+      population: elderly_no_children
+      notes: "Elderly less likely to participate (stigma, access)"
+
+    - rate: 0.88
+      source: "USDA FNS 2023"
+      population: households_with_children
+      notes: "Families with children participate at higher rates"
+
+  state_variation:
+    description: "Participation rates vary substantially by state"
+    highest:
+      - state: CA
+        rate: 0.92
+      - state: OR
+        rate: 0.91
+      - state: ME
+        rate: 0.90
+    lowest:
+      - state: WY
+        rate: 0.56
+      - state: UT
+        rate: 0.61
+      - state: KS
+        rate: 0.65
+    source: "USDA FNS State Activity Reports"
+
+  varies_by:
+    - variable: income_to_poverty_ratio
+      effect: "Higher at lower income levels"
+    - variable: state
+      effect: "State policy and outreach matter"
+    - variable: age
+      effect: "Elderly participate less"
+    - variable: has_children
+      effect: "Families with children participate more"
+    - variable: citizenship_status
+      effect: "Some immigrants ineligible or fear participation"
+    - variable: benefit_amount
+      effect: "Higher expected benefit increases participation"
+
+  applies_to: statute/7/2011/snap_benefit
+
+  modeling_approach:
+    default: multiply_by_rate
+    formula: "received_snap = eligible_snap * takeup_rate"
+    advanced: logit_model
+    advanced_predictors:
+      - income_to_poverty_ratio
+      - expected_benefit_amount
+      - state_indicator
+      - has_elderly_member
+      - has_children
+      - vehicle_ownership  # Proxy for asset test complexity

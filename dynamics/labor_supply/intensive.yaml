@@ -1,0 +1,37 @@
+# Labor Supply: Intensive Margin
+#
+# How hours worked change in response to marginal tax rate changes.
+# Based on compensated labor supply elasticity literature.
+
+intensive_margin:
+  description: Percent change in hours worked per percent change in net-of-tax rate
+
+  estimates:
+    - elasticity: 0.25
+      confidence_interval: [0.15, 0.35]
+      source: "Chetty et al. 2011, AER"
+      url: "https://doi.org/10.1257/aer.101.7.2832"
+      population: general
+      notes: "Meta-analysis of quasi-experimental estimates"
+
+    - elasticity: 0.10
+      confidence_interval: [0.05, 0.20]
+      source: "Saez, Slemrod, Giertz 2012, JEL"
+      url: "https://doi.org/10.1257/jel.50.1.3"
+      population: high_income
+      threshold: 100_000  # AGI > $100k
+      notes: "Upper income response is primarily avoidance, not real labor"
+
+    - elasticity: 0.33
+      confidence_interval: [0.20, 0.50]
+      source: "Blau & Kahn 2007, JLE"
+      population: married_women
+      notes: "Higher elasticity for secondary earners"
+
+  input: statute/*/marginal_tax_rate
+  modifies: core/person/hours_worked
+
+  # How to apply
+  application:
+    method: proportional
+    formula: "hours_new = hours_old * (1 + elasticity * (mtr_new - mtr_old) / (1 - mtr_old))"

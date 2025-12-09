@@ -1,0 +1,56 @@
+# Taxable Income Elasticity
+#
+# Broader measure than labor supply: captures all responses to taxation including
+# hours worked, effort, tax avoidance, income timing, and income shifting.
+#
+# This is the key parameter for revenue forecasting.
+
+taxable_income_elasticity:
+  description: Percent change in taxable income per percent change in net-of-tax rate
+
+  estimates:
+    - elasticity: 0.25
+      confidence_interval: [0.12, 0.40]
+      source: "Saez, Slemrod, Giertz 2012, JEL"
+      url: "https://doi.org/10.1257/jel.50.1.3"
+      population: general
+      notes: "Preferred estimate from literature review; controls for mean reversion"
+
+    - elasticity: 0.40
+      confidence_interval: [0.20, 0.60]
+      source: "Gruber & Saez 2002, JPubE"
+      url: "https://doi.org/10.1016/S0047-2727(01)00085-8"
+      population: high_income
+      threshold: 100_000
+      notes: "Higher earners more responsive; includes avoidance channels"
+
+    - elasticity: 0.57
+      confidence_interval: [0.30, 0.90]
+      source: "Feldstein 1995, JPE"
+      population: top_bracket
+      notes: "Often cited but may overstate due to income shifting around TRA86"
+
+    - elasticity: 0.15
+      confidence_interval: [0.05, 0.25]
+      source: "Giertz 2007, NTJ"
+      population: below_median_income
+      notes: "Lower response for those with less scope for avoidance"
+
+  input: statute/26/1/marginal_rate
+  modifies: statute/26/62/a/adjusted_gross_income
+
+  components:
+    description: "ETI captures multiple behavioral channels"
+    real_labor_supply: 0.10  # Hours and effort
+    avoidance: 0.08  # Legal tax minimization
+    timing: 0.05  # Shifting income across years
+    form_shifting: 0.02  # Wage vs. capital income
+
+  caveats:
+    - "ETI is not structural - varies with tax code complexity"
+    - "High estimates may reflect income shifting, not real response"
+    - "Long-run ETI may differ from short-run"
+
+  application:
+    method: proportional
+    formula: "taxable_income_new = taxable_income_old * (1 + ETI * log((1-mtr_new)/(1-mtr_old)))"

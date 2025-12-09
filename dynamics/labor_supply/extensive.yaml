@@ -1,0 +1,50 @@
+# Labor Supply: Extensive Margin
+#
+# How labor force participation changes in response to participation tax rates.
+# The participation tax rate is the effective tax on moving from non-work to work.
+
+extensive_margin:
+  description: Percent change in employment probability per percent change in net-of-participation-tax rate
+
+  estimates:
+    - elasticity: 0.25
+      confidence_interval: [0.10, 0.40]
+      source: "Chetty et al. 2011, AER"
+      url: "https://doi.org/10.1257/aer.101.7.2832"
+      population: primary_earners
+      notes: "Lower response for primary earners with stable employment"
+
+    - elasticity: 0.50
+      confidence_interval: [0.25, 0.75]
+      source: "Meghir & Phillips 2010, Handbook"
+      population: secondary_earners
+      notes: "Higher response for those with more elastic attachment to labor force"
+
+    - elasticity: 0.75
+      confidence_interval: [0.40, 1.00]
+      source: "Eissa & Liebman 1996, QJE"
+      url: "https://doi.org/10.2307/2946689"
+      population: single_mothers
+      notes: "EITC expansion study; high response for this population"
+
+    - elasticity: 0.15
+      confidence_interval: [0.05, 0.30]
+      source: "Juhn, Murphy, Topel 1991, JPE"
+      population: prime_age_men
+      notes: "Very inelastic; strong labor force attachment"
+
+  input: statute/*/participation_tax_rate
+  modifies: core/person/is_employed
+
+  # The participation tax rate calculation
+  ptr_calculation:
+    description: "PTR = (taxes_if_working - taxes_if_not + benefits_if_not - benefits_if_working) / earnings_if_working"
+    components:
+      - income_tax_increase
+      - payroll_tax
+      - benefit_phaseout  # SNAP, Medicaid, housing, etc.
+      - eitc_gain  # EITC offsets high PTR for low earners
+
+  application:
+    method: logit
+    formula: "P(employed) = logit(baseline_prob + elasticity * ptr_change)"

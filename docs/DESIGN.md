@@ -2732,6 +2732,407 @@ This model works well for:
 
 ---
 
+## 18. Dynamics layer: behavioral responses
+
+The rules engine calculates **static** impacts: "If this policy existed today, what would change?" But real policy analysis often requires **behavioral** responses: "How will people change their behavior in response to policy changes?"
+
+The dynamics layer is **separate from rules** but **consumes rules outputs**:
+
+```
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│  MICRODATA  │───▶│    RULES    │───▶│  DYNAMICS   │──┐
+│             │    │  (statute)  │    │ (behavior)  │  │
+└─────────────┘    └─────────────┘    └─────────────┘  │
+                          ▲                            │
+                          └────────────────────────────┘
+                              feedback loop
+```
+
+### 18.1 Why dynamics is separate from rules
+
+The rules layer encodes **law**: what the statute says. Dynamics encode **behavior**: how people respond to incentives. These have different:
+
+| Aspect | Rules | Dynamics |
+|--------|-------|----------|
+| Source | Statutory text | Empirical research |
+| Certainty | Deterministic | Probabilistic (with confidence intervals) |
+| Stability | Changes with legislation | Updates with new research |
+| Scope | Specific to program | Cross-cutting (labor supply affects many programs) |
+
+Mixing them would conflate "what the law says" with "what we estimate will happen."
+
+### 18.2 Types of behavioral responses
+
+#### Labor supply responses
+
+How work effort changes with marginal tax rates:
+
+```yaml
+# dynamics/labor_supply/intensive.yaml
+intensive_margin:
+  description: Change in hours worked given MTR change
+
+  estimates:
+    - elasticity: 0.25
+      confidence_interval: [0.15, 0.35]
+      source: "Chetty et al. 2011"
+      population: general
+
+    - elasticity: 0.10
+      confidence_interval: [0.05, 0.20]
+      source: "Saez et al. 2012"
+      population: high_income
+
+  input: statute/*/marginal_tax_rate
+  modifies: core/person/hours_worked
+
+extensive_margin:
+  description: Change in labor force participation given participation tax rate
+
+  estimates:
+    - elasticity: 0.50
+      confidence_interval: [0.25, 0.75]
+      source: "Meghir & Phillips 2010"
+      population: secondary_earners
+
+    - elasticity: 0.25
+      confidence_interval: [0.10, 0.40]
+      source: "Chetty et al. 2011"
+      population: primary_earners
+
+  input: statute/*/participation_tax_rate
+  modifies: core/person/is_employed
+```
+
+#### Taxable income elasticity
+
+Broader response including income shifting, timing, avoidance:
+
+```yaml
+# dynamics/taxable_income/elasticity.yaml
+taxable_income_elasticity:
+  description: Percent change in taxable income per percent change in net-of-tax rate
+
+  estimates:
+    - elasticity: 0.25
+      confidence_interval: [0.10, 0.40]
+      source: "Saez 2010"
+      population: general
+
+    - elasticity: 0.50
+      confidence_interval: [0.30, 0.80]
+      source: "Gruber & Saez 2002"
+      population: high_income
+      threshold: 100_000  # AGI > $100k
+
+  input: statute/26/1/marginal_rate
+  modifies: statute/26/62/a/adjusted_gross_income
+```
+
+#### Take-up rates
+
+Not everyone claims benefits they're eligible for:
+
+```yaml
+# dynamics/takeup/eitc.yaml
+eitc_takeup:
+  description: Fraction of eligible filers who claim EITC
+
+  estimates:
+    - rate: 0.78
+      source: "IRS 2022"
+      population: all_eligible
+
+    - rate: 0.85
+      source: "CBPP 2021"
+      population: with_children
+
+    - rate: 0.65
+      source: "IRS 2022"
+      population: childless
+
+  varies_by:
+    - filing_complexity
+    - count_qualifying_children
+    - income_volatility
+
+  applies_to: statute/26/32/a/1/earned_income_credit
+```
+
+```yaml
+# dynamics/takeup/snap.yaml
+snap_takeup:
+  description: Fraction of eligible households participating in SNAP
+
+  estimates:
+    - rate: 0.82
+      source: "USDA FNS 2023"
+      population: all_eligible
+
+    - rate: 0.91
+      source: "USDA FNS 2023"
+      population: income_below_50_percent_poverty
+
+    - rate: 0.72
+      source: "USDA FNS 2023"
+      population: elderly
+
+  varies_by:
+    - income_to_poverty_ratio
+    - state  # State-level variation in outreach
+    - age
+
+  applies_to: statute/7/2011/snap_benefit
+```
+
+### 18.3 Simulation modes
+
+The executor supports multiple scoring modes:
+
+```python
+class ScoringMode(Enum):
+    STATIC = "static"              # No behavioral response
+    BEHAVIORAL = "behavioral"      # Short-run elasticity responses
+    DYNAMIC = "dynamic"            # Long-run with equilibrium effects
+
+@dataclass
+class SimulationConfig:
+    mode: ScoringMode = ScoringMode.STATIC
+
+    # For behavioral/dynamic modes
+    elasticity_source: str = "central"  # "central", "low", "high"
+    include_takeup: bool = True
+    max_iterations: int = 10  # For convergence
+    convergence_threshold: float = 0.001
+```
+
+#### Static scoring (default)
+
+```python
+# Day-after impact: what if policy changed with no behavioral response?
+results = executor.execute(
+    code,
+    microdata,
+    scenario=reform,
+    config=SimulationConfig(mode=ScoringMode.STATIC)
+)
+```
+
+#### Behavioral scoring
+
+```python
+# Short-run impact with labor supply response
+config = SimulationConfig(
+    mode=ScoringMode.BEHAVIORAL,
+    elasticity_source="central",
+    include_takeup=True,
+)
+
+# Iteration 1: Calculate policy impact
+baseline = executor.execute(code, microdata, scenario=baseline_scenario)
+reform = executor.execute(code, microdata, scenario=reform_scenario)
+
+# Iteration 2+: Apply behavioral responses, recalculate
+mtr_change = reform["mtr"] - baseline["mtr"]
+hours_response = mtr_change * labor_supply_elasticity
+adjusted_microdata = apply_labor_response(microdata, hours_response)
+reform_behavioral = executor.execute(code, adjusted_microdata, scenario=reform_scenario)
+```
+
+#### Dynamic scoring
+
+```python
+# Long-run with macro feedback (iterate to equilibrium)
+config = SimulationConfig(
+    mode=ScoringMode.DYNAMIC,
+    max_iterations=10,
+)
+
+for i in range(config.max_iterations):
+    results = executor.execute(code, microdata, scenario=reform_scenario)
+    microdata = dynamics.apply_all_responses(microdata, results)
+
+    if dynamics.has_converged(results, previous_results):
+        break
+```
+
+### 18.4 Heterogeneous responses
+
+Elasticities vary by population. The dynamics layer supports conditional estimates:
+
+```yaml
+labor_supply_elasticity:
+  default: 0.25
+
+  by_population:
+    - condition: "is_secondary_earner"
+      elasticity: 0.50
+      source: "Blundell & MaCurdy 1999"
+
+    - condition: "age >= 55"
+      elasticity: 0.15
+      source: "French 2005"
+
+    - condition: "has_young_children and is_female"
+      elasticity: 0.60
+      source: "Blau & Kahn 2007"
+```
+
+This translates to vectorized conditional application:
+
+```python
+def apply_heterogeneous_elasticity(
+    microdata: MicrodataSet,
+    elasticity_config: dict,
+    mtr_change: np.ndarray,
+) -> np.ndarray:
+    """Apply population-specific elasticities."""
+
+    response = np.zeros_like(mtr_change)
+
+    for spec in elasticity_config["by_population"]:
+        mask = evaluate_condition(microdata, spec["condition"])
+        response[mask] = mtr_change[mask] * spec["elasticity"]
+
+    # Default for unmatched
+    unmatched = response == 0
+    response[unmatched] = mtr_change[unmatched] * elasticity_config["default"]
+
+    return response
+```
+
+### 18.5 Uncertainty quantification
+
+Every behavioral estimate has uncertainty. The dynamics layer supports distributional analysis:
+
+```python
+@dataclass
+class UncertaintyConfig:
+    method: str = "monte_carlo"  # or "bounds"
+    n_samples: int = 100
+
+def run_with_uncertainty(
+    executor: VectorizedExecutor,
+    microdata: MicrodataSet,
+    dynamics: DynamicsConfig,
+    uncertainty: UncertaintyConfig,
+) -> DistributionalResult:
+    """Run simulation with sampled behavioral parameters."""
+
+    results = []
+    for _ in range(uncertainty.n_samples):
+        # Sample elasticities from confidence intervals
+        sampled_dynamics = dynamics.sample()
+
+        result = executor.execute_behavioral(
+            microdata,
+            dynamics=sampled_dynamics
+        )
+        results.append(result)
+
+    return DistributionalResult(
+        mean=np.mean(results, axis=0),
+        std=np.std(results, axis=0),
+        percentiles={
+            5: np.percentile(results, 5, axis=0),
+            95: np.percentile(results, 95, axis=0),
+        }
+    )
+```
+
+### 18.6 Structural reforms and dynamics
+
+Parameter reforms have well-established elasticities. But **structural reforms** (new programs, program abolition) are harder:
+
+```yaml
+# How do people respond to UBI that doesn't exist yet?
+reform:
+  introduces:
+    - universal_basic_income: $1000/month
+
+dynamics:
+  # No direct elasticity estimate - must reason from components
+  ubi_response:
+    type: composite
+    components:
+      - income_effect:
+          source: "implied by labor supply literature"
+          estimate: -0.05  # 5% hours reduction from income effect
+          uncertainty: high
+      - mtb_reduction:
+          source: "if UBI replaces means-tested benefits"
+          applies_when: replaces_snap or replaces_tanf
+          estimate: +0.02  # Reduced MTR → increased work
+```
+
+For novel policies, we:
+1. Decompose into known response channels
+2. Apply existing elasticities to each channel
+3. Flag high uncertainty explicitly
+4. Report bounds rather than point estimates
+
+### 18.7 Directory structure
+
+```
+cosilico-engine/
+├── statute/              # Rules (law-linked)
+│   └── 26/32/...
+├── dynamics/             # Behavioral parameters (research-linked)
+│   ├── labor_supply/
+│   │   ├── intensive.yaml
+│   │   └── extensive.yaml
+│   ├── taxable_income/
+│   │   └── elasticity.yaml
+│   ├── takeup/
+│   │   ├── eitc.yaml
+│   │   ├── snap.yaml
+│   │   └── medicaid.yaml
+│   └── macro/
+│       └── wage_feedback.yaml
+├── microdata/            # Survey → statute mappings
+│   ├── cps/
+│   │   └── mapping.yaml
+│   └── calibration/
+│       └── targets.yaml
+└── src/
+    └── cosilico/
+        ├── dsl_parser.py
+        ├── vectorized_executor.py
+        └── dynamics_executor.py
+```
+
+### 18.8 Integration with microdata calibration
+
+The dynamics layer interacts with calibration (Section 16):
+
+```
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│ Raw Survey  │───▶│ Calibration │───▶│ Calibrated  │
+│ Microdata   │    │ (Section 16)│    │ Microdata   │
+└─────────────┘    └─────────────┘    └─────────────┘
+                                             │
+                   ┌─────────────┐           │
+                   │    Rules    │◀──────────┤
+                   │  (statute)  │           │
+                   └─────────────┘           │
+                          │                  │
+                          ▼                  │
+                   ┌─────────────┐           │
+                   │  Dynamics   │◀──────────┘
+                   │ (behavior)  │
+                   └─────────────┘
+                          │
+                          ▼
+                   ┌─────────────┐
+                   │   Results   │
+                   │ (with CI)   │
+                   └─────────────┘
+```
+
+Calibration ensures microdata matches administrative totals under **current law with current behavior**. Dynamics then model how behavior changes under **counterfactual policy**.
+
+---
+
 ## Appendix A: Comparison with OpenFisca
 
 Based on analysis of [OpenFisca-Core](https://github.com/openfisca/openfisca-core) and [PolicyEngine-Core](https://github.com/PolicyEngine/policyengine-core) source code:

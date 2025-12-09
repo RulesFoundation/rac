@@ -1,0 +1,166 @@
+# Calibration Targets
+#
+# Administrative totals used to calibrate survey weights.
+# See DESIGN.md Section 16 for calibration methodology.
+
+calibration_year: 2022
+
+targets:
+
+  # IRS Statistics of Income (high reliability)
+  - name: total_wages
+    target_value: 10_200_000_000_000  # $10.2 trillion
+    source: "IRS SOI Table 1.1, Tax Year 2022"
+    url: "https://www.irs.gov/statistics/soi-tax-stats-individual-income-tax-statistics"
+    variable_type: observed
+    maps_to: statute/26/61/a/1/wages
+    reliability: high
+    notes: "W-2 wages, salaries, tips"
+
+  - name: total_agi
+    target_value: 14_700_000_000_000  # $14.7 trillion
+    source: "IRS SOI Table 1.1"
+    variable_type: calculated
+    maps_to: statute/26/62/a/adjusted_gross_income
+    reliability: high
+
+  - name: total_income_tax
+    target_value: 2_100_000_000_000  # $2.1 trillion
+    source: "IRS SOI Table 1.1"
+    variable_type: calculated
+    maps_to: statute/26/1/income_tax
+    reliability: high
+
+  - name: total_eitc
+    target_value: 57_000_000_000  # $57 billion
+    source: "IRS SOI EITC Statistics 2022"
+    variable_type: calculated
+    maps_to: statute/26/32/a/1/earned_income_credit
+    reliability: high
+    count_target: 31_000_000  # 31 million returns claiming EITC
+
+  - name: returns_with_ctc
+    target_value: 36_000_000  # 36 million returns
+    source: "IRS SOI"
+    variable_type: calculated
+    maps_to: statute/26/24/child_tax_credit
+    reliability: high
+
+  # Social Security Administration
+  - name: total_social_security_benefits
+    target_value: 1_100_000_000_000  # $1.1 trillion
+    source: "SSA Annual Statistical Supplement 2023"
+    url: "https://www.ssa.gov/policy/docs/statcomps/supplement/"
+    variable_type: observed
+    maps_to: statute/26/86/social_security_benefits
+    reliability: high
+
+  - name: social_security_beneficiaries
+    target_value: 66_000_000  # 66 million
+    source: "SSA"
+    variable_type: observed
+    reliability: high
+
+  # SNAP (USDA)
+  - name: snap_total_benefits
+    target_value: 119_000_000_000  # $119 billion (elevated due to emergency allotments)
+    source: "USDA FNS Program Data"
+    url: "https://www.fns.usda.gov/pd/supplemental-nutrition-assistance-program-snap"
+    variable_type: calculated
+    maps_to: statute/7/2011/snap_benefit
+    reliability: high
+
+  - name: snap_participants
+    target_value: 41_000_000  # 41 million
+    source: "USDA FNS"
+    variable_type: calculated
+    reliability: high
+
+  # Medicare/Medicaid (CMS)
+  - name: medicaid_enrollment
+    target_value: 85_000_000  # 85 million
+    source: "CMS Medicaid Enrollment Data"
+    url: "https://www.medicaid.gov/medicaid/program-information/medicaid-and-chip-enrollment-data/"
+    variable_type: observed
+    maps_to: statute/42/1396/medicaid_enrolled
+    reliability: high
+
+  - name: medicare_enrollment
+    target_value: 65_000_000  # 65 million
+    source: "CMS Medicare Enrollment Dashboard"
+    variable_type: observed
+    maps_to: statute/42/1395/medicare_enrolled
+    reliability: high
+
+  # Demographics (Census)
+  - name: total_population
+    target_value: 333_000_000
+    source: "Census Bureau Population Estimates 2022"
+    variable_type: observed
+    reliability: high
+
+  - name: population_under_18
+    target_value: 72_000_000
+    source: "Census Bureau"
+    variable_type: observed
+    reliability: high
+
+  - name: population_65_plus
+    target_value: 58_000_000
+    source: "Census Bureau"
+    variable_type: observed
+    reliability: high
+
+  # Labor force (BLS)
+  - name: civilian_labor_force
+    target_value: 164_000_000
+    source: "BLS Current Employment Statistics 2022"
+    variable_type: observed
+    reliability: high
+
+  - name: employed_persons
+    target_value: 158_000_000
+    source: "BLS"
+    variable_type: observed
+    reliability: high
+
+# Distributional targets (beyond totals)
+distributional_targets:
+
+  - name: wage_distribution
+    source: "IRS SOI Table 1.4"
+    variable: statute/26/61/a/1/wages
+    percentiles:
+      p10: 8_000
+      p25: 22_000
+      p50: 45_000
+      p75: 82_000
+      p90: 140_000
+      p95: 200_000
+      p99: 450_000
+
+  - name: agi_distribution
+    source: "IRS SOI"
+    variable: statute/26/62/a/adjusted_gross_income
+    percentiles:
+      p10: 5_000
+      p25: 18_000
+      p50: 44_000
+      p75: 90_000
+      p90: 170_000
+      p95: 260_000
+      p99: 600_000
+
+# Calibration configuration
+calibration_config:
+  method: entropy_balancing
+  max_weight_ratio: 10.0
+  convergence_tolerance: 1e-6
+
+  # Priority when targets conflict
+  priority_order:
+    - total_population  # Must match exactly
+    - demographics  # Age, sex distributions
+    - irs_totals  # High reliability administrative data
+    - benefit_totals  # Program participation
+    - distributions  # Match percentiles

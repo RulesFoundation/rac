@@ -1,0 +1,59 @@
+# EITC Take-up Rates
+#
+# Not all eligible taxpayers claim the Earned Income Tax Credit.
+# Take-up varies by population characteristics.
+
+eitc_takeup:
+  description: Fraction of eligible tax units that claim EITC
+
+  estimates:
+    - rate: 0.78
+      source: "IRS Statistics of Income 2022"
+      url: "https://www.irs.gov/statistics/soi-tax-stats-individual-income-tax-statistics"
+      population: all_eligible
+      year: 2020
+      notes: "Overall participation rate"
+
+    - rate: 0.85
+      source: "CBPP analysis 2021"
+      url: "https://www.cbpp.org/research/federal-tax/the-earned-income-tax-credit"
+      population: with_qualifying_children
+      notes: "Families with children claim at higher rates"
+
+    - rate: 0.65
+      source: "IRS 2022"
+      population: childless_workers
+      notes: "Smaller credit, less awareness, more complex rules"
+
+    - rate: 0.91
+      source: "Plueger 2009"
+      population: income_below_10k
+      notes: "Very low income highly dependent on refund"
+
+    - rate: 0.70
+      source: "Plueger 2009"
+      population: income_near_phaseout
+      notes: "Smaller benefit reduces incentive to claim"
+
+  varies_by:
+    - variable: count_qualifying_children
+      effect: "Higher with more children (larger credit)"
+    - variable: income_level
+      effect: "Higher at lower incomes"
+    - variable: filing_status
+      effect: "Lower for married filing jointly (more complex)"
+    - variable: self_employment_share
+      effect: "Lower with self-employment income (harder to document)"
+
+  applies_to: statute/26/32/a/1/earned_income_credit
+
+  modeling_approach:
+    default: multiply_by_rate
+    formula: "claimed_eitc = eligible_eitc * takeup_rate"
+    advanced: logit_model
+    advanced_predictors:
+      - income_level
+      - count_qualifying_children
+      - has_self_employment
+      - used_paid_preparer
+      - state  # Some states do more outreach

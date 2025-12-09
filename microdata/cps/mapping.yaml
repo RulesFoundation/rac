@@ -1,0 +1,188 @@
+# CPS ASEC Variable Mapping
+#
+# Maps Census Current Population Survey (Annual Social and Economic Supplement)
+# variables to Cosilico statute-linked variables.
+#
+# Survey documentation: https://www.census.gov/data/datasets/time-series/demo/cps/cps-asec.html
+
+survey:
+  name: "Current Population Survey Annual Social and Economic Supplement"
+  abbreviation: CPS_ASEC
+  source: Census Bureau
+  frequency: annual
+  reference_period: calendar_year
+
+# Entity structure
+entities:
+  person:
+    id_variable: PERIDNUM
+    weight_variable: MARSUPWT
+
+  household:
+    id_variable: H_IDNUM
+    weight_variable: HSUP_WGT
+
+  family:
+    id_variable: FH_SEQ
+    # CPS families roughly correspond to tax units but not exactly
+
+# Variable mappings: CPS variable -> statute path
+mappings:
+
+  # Demographics
+  - survey_var: A_AGE
+    statute_path: core/person/age
+    transform: identity
+    notes: "Age in years"
+
+  - survey_var: A_SEX
+    statute_path: core/person/is_female
+    transform: "lambda x: x == 2"
+    notes: "1=Male, 2=Female"
+
+  - survey_var: A_MARITL
+    statute_path: core/person/marital_status
+    transform: marital_status_map
+    notes: "Multiple categories mapped to simplified enum"
+
+  # Income components (map to IRC §61 gross income)
+  - survey_var: WSAL_VAL
+    statute_path: statute/26/61/a/1/wages
+    transform: identity
+    notes: "Wage and salary income"
+    reliability: high
+
+  - survey_var: SEMP_VAL
+    statute_path: statute/26/1402/a/net_earnings_self_employment
+    transform: identity
+    notes: "Self-employment income (may be negative)"
+    reliability: medium
+
+  - survey_var: INT_VAL
+    statute_path: statute/26/61/a/4/interest_income
+    transform: identity
+    notes: "Interest income"
+    reliability: medium
+    known_issues:
+      - "Underreported in surveys"
+      - "Missing tax-exempt interest"
+
+  - survey_var: DIV_VAL
+    statute_path: statute/26/61/a/7/dividend_income
+    transform: identity
+    notes: "Dividend income"
+    reliability: medium
+
+  - survey_var: RNT_VAL
+    statute_path: statute/26/32/i/2/C/net_rent_royalty_income
+    transform: identity
+    notes: "Net rental income"
+
+  - survey_var: SS_VAL
+    statute_path: statute/26/86/social_security_benefits
+    transform: identity
+    notes: "Social Security benefits"
+    reliability: high
+
+  - survey_var: UC_VAL
+    statute_path: statute/26/85/unemployment_compensation
+    transform: identity
+    notes: "Unemployment compensation"
+
+  # Benefits (imputed or reported)
+  - survey_var: SNAP_VAL
+    statute_path: statute/7/2011/snap_benefit
+    transform: identity
+    notes: "SNAP benefits (reported, may need imputation)"
+    reliability: low
+    imputation_needed: true
+
+  - survey_var: MCARE
+    statute_path: statute/42/1395/medicare_enrolled
+    transform: "lambda x: x == 1"
+    notes: "Medicare coverage indicator"
+
+  - survey_var: MCAID
+    statute_path: statute/42/1396/medicaid_enrolled
+    transform: "lambda x: x == 1"
+    notes: "Medicaid coverage indicator"
+
+  # Tax-related
+  - survey_var: TAX_INC
+    statute_path: statute/26/62/a/adjusted_gross_income
+    transform: identity
+    notes: "CPS-computed taxable income (approximate)"
+    reliability: medium
+    known_issues:
+      - "Not same as IRS AGI definition"
+      - "May need recalculation"
+
+  - survey_var: FEDTAX_AC
+    statute_path: statute/26/1/income_tax_before_credits
+    transform: identity
+    notes: "Federal income tax after credits (CPS imputed)"
+    reliability: low
+    notes: "Better to calculate from components"
+
+  - survey_var: EITC
+    statute_path: statute/26/32/a/1/earned_income_credit
+    transform: identity
+    notes: "EITC (CPS imputed or reported)"
+    reliability: medium
+
+  # Household structure
+  - survey_var: A_LINENO
+    statute_path: core/person/line_number
+    transform: identity
+    notes: "Line number within household"
+
+  - survey_var: A_SPOUSE
+    statute_path: core/person/spouse_line_number
+    transform: identity
+    notes: "Line number of spouse"
+
+  - survey_var: PEPAR1
+    statute_path: core/person/parent1_line_number
+    transform: identity
+    notes: "Line number of parent 1"
+
+  - survey_var: PEPAR2
+    statute_path: core/person/parent2_line_number
+    transform: identity
+    notes: "Line number of parent 2"
+
+# Custom transforms
+transforms:
+  marital_status_map:
+    1: MARRIED_SPOUSE_PRESENT
+    2: MARRIED_SPOUSE_ABSENT
+    3: WIDOWED
+    4: DIVORCED
+    5: SEPARATED
+    6: NEVER_MARRIED
+
+# Variables requiring imputation
+imputation_required:
+  - variable: statute/26/32/c/3/A/count_qualifying_children
+    reason: "CPS children != EITC qualifying children"
+    method: "Apply EITC qualifying child rules to household members"
+
+  - variable: statute/26/1/filing_status
+    reason: "CPS doesn't have tax filing status"
+    method: "Impute based on marital status, dependents, household structure"
+
+# Known data quality issues
+data_quality:
+  underreported:
+    - interest_income  # ~50% underreported
+    - dividend_income  # ~40% underreported
+    - self_employment_income  # Significant underreporting
+    - transfer_income  # SNAP, TANF underreported
+
+  overreported:
+    - wage_income  # Generally accurate
+
+  structural_issues:
+    - "Tax units don't match CPS families exactly"
+    - "Need to construct tax units from household roster"
+    - "Multiple tax unit per household not well captured"
