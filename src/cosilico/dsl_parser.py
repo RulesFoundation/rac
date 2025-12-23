@@ -356,8 +356,20 @@ class Lexer:
         if self.source[self.pos] == '-':
             value += self._advance()
 
-        while self.pos < len(self.source) and (self.source[self.pos].isdigit() or self.source[self.pos] == '.'):
+        # Read digits
+        while self.pos < len(self.source) and self.source[self.pos].isdigit():
             value += self._advance()
+
+        # Read decimal part only if dot is followed by a digit
+        # This allows "26.32.a.1" to be lexed as "26" "." "32" "." "a" "." "1"
+        # while still allowing "3.14" to be lexed as a single float
+        if self.pos < len(self.source) and self.source[self.pos] == '.':
+            # Peek ahead to see if there's a digit after the dot
+            if self.pos + 1 < len(self.source) and self.source[self.pos + 1].isdigit():
+                value += self._advance()  # Consume the dot
+                # Read fractional digits
+                while self.pos < len(self.source) and self.source[self.pos].isdigit():
+                    value += self._advance()
 
         # Check for percentage
         if self.pos < len(self.source) and self.source[self.pos] == '%':
@@ -614,10 +626,42 @@ class Parser:
         return "".join(parts)
 
     def _parse_dotted_name(self) -> str:
+        """Parse a dotted name that can contain identifiers or numbers.
+
+        Examples:
+            - gov.irs.eitc (identifiers only)
+            - statute.26.32.a.1 (mixed identifiers and numbers)
+
+        Note: The lexer may read "26.32" as a float. In dotted name context,
+        we keep it as "26.32" which is the correct representation for statute paths.
+        """
+        # First component must be an identifier
         name = self._consume(TokenType.IDENTIFIER, "Expected identifier").value
+
         while self._check(TokenType.DOT):
             self._advance()
-            name += "." + self._consume(TokenType.IDENTIFIER, "Expected identifier").value
+            # After a dot, we can have either an identifier or a number
+            if self._check(TokenType.IDENTIFIER):
+                name += "." + self._advance().value
+            elif self._check(TokenType.NUMBER):
+                # Convert number to string for the path
+                num_value = self._advance().value
+                # Handle both int and float
+                if isinstance(num_value, int):
+                    name += "." + str(num_value)
+                elif isinstance(num_value, float):
+                    # Check if it's actually an integer value stored as float
+                    if num_value == int(num_value):
+                        name += "." + str(int(num_value))
+                    else:
+                        # It's a true float (e.g., 26.32 in statute.26.32.a)
+                        # Keep the float representation
+                        name += "." + str(num_value)
+                else:
+                    name += "." + str(num_value)
+            else:
+                raise SyntaxError(f"Expected identifier or number after '.' at line {self._peek().line}")
+
         return name
 
     def _parse_variable(self) -> VariableDef:

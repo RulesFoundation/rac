@@ -107,6 +107,27 @@ class TestLexer:
         assert tokens[1].value == 0.5
         assert tokens[2].value == 100.0
 
+    def test_number_followed_by_dot_identifier(self):
+        """Numbers followed by dot and identifier in statute paths.
+
+        Note: The lexer reads "26.32" as a float because it's followed by a digit.
+        The parser handles this by splitting floats in dotted name context.
+        Tokens: statute, ., 26.32, ., a, ., 1, EOF
+        """
+        lexer = Lexer("statute.26.32.a.1")
+        tokens = lexer.tokenize()
+        assert tokens[0].type == TokenType.IDENTIFIER
+        assert tokens[0].value == "statute"
+        assert tokens[1].type == TokenType.DOT
+        assert tokens[2].type == TokenType.NUMBER
+        assert tokens[2].value == 26.32  # Lexed as float
+        assert tokens[3].type == TokenType.DOT
+        assert tokens[4].type == TokenType.IDENTIFIER
+        assert tokens[4].value == "a"
+        assert tokens[5].type == TokenType.DOT
+        assert tokens[6].type == TokenType.NUMBER
+        assert tokens[6].value == 1
+
     def test_negative_number(self):
         """Negative numbers are parsed correctly."""
         lexer = Lexer("-42 -3.14")
@@ -563,10 +584,23 @@ variable tax {
 class TestParserModuleDeclarations:
     """Tests for module-level declarations."""
 
+    def test_module_declaration_with_numeric_segments(self):
+        """Parse module declaration with numeric path segments like statute.26.32.a.1."""
+        code = """
+module statute.26.32.a.1
+
+variable earned_income_credit {
+  entity TaxUnit
+  period Year
+  dtype Money
+}
+"""
+        module = parse_dsl(code)
+        assert module.module_decl is not None
+        assert module.module_decl.path == "statute.26.32.a.1"
+
     def test_module_declaration(self):
         """Parse module declaration."""
-        # Note: Module paths with adjacent numeric segments (like 26.32) are
-        # lexed as floating-point numbers. Use alphanumeric paths instead.
         code = """
 module gov.irs.section32.subsection_a
 
