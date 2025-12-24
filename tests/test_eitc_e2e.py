@@ -130,14 +130,14 @@ class TestEITCCalculation:
         assert ei_2 == 17400, f"Expected 17400, got {ei_2}"
 
     def test_resolver_loads_phaseout_amounts(self, resolver):
-        """Verify phaseout amounts are correct."""
+        """Verify phaseout amounts are correct (from Rev. Proc. 2023-34)."""
         po_0 = resolver.resolve(
             "statute/26/32/b/2/A/base_amounts",
             fragment="phaseout_amount",
             tax_year=2024,
             num_qualifying_children=0,
         )
-        assert po_0 == 9800
+        assert po_0 == 10330  # Corrected value
 
         po_1 = resolver.resolve(
             "statute/26/32/b/2/A/base_amounts",
@@ -145,7 +145,7 @@ class TestEITCCalculation:
             tax_year=2024,
             num_qualifying_children=1,
         )
-        assert po_1 == 21560
+        assert po_1 == 22720  # Corrected value
 
     def test_resolver_loads_joint_adjustment(self, resolver):
         """Verify joint return adjustment is correct."""
@@ -168,7 +168,7 @@ class TestEITCCalculation:
         assert credit == 4212.60, f"Expected 4212.60, got {credit}"
 
     def test_eitc_2_children_30k(self, resolver):
-        """Test: 2 children, $30,000 income → $5,236"""
+        """Test: 2 children, $30,000 income → $5,427 (verified against PolicyEngine)"""
         credit = calculate_eitc(
             earned_income=30000,
             agi=30000,
@@ -176,13 +176,13 @@ class TestEITCCalculation:
             filing_status="SINGLE",
             resolver=resolver,
         )
-        # Phase-in: 0.40 × 17400 = 6960
-        # Phase-out: 0.2106 × (30000 - 21560) = 0.2106 × 8440 = 1777.46
-        # Credit: 6960 - 1777.46 = 5182.54
-        assert abs(credit - 5182.54) < 1, f"Expected ~5182.54, got {credit}"
+        # Phase-in: 0.40 × 17400 = 6960 (max credit)
+        # Phase-out: 0.2106 × (30000 - 22720) = 0.2106 × 7280 = 1533.17
+        # Credit: 6960 - 1533.17 = 5426.83
+        assert abs(credit - 5426.83) < 1, f"Expected ~5426.83, got {credit}"
 
     def test_eitc_0_children_15k(self, resolver):
-        """Test: 0 children, $15,000 income → ~$234"""
+        """Test: 0 children, $15,000 income → ~$275 (verified against PolicyEngine)"""
         credit = calculate_eitc(
             earned_income=15000,
             agi=15000,
@@ -190,10 +190,10 @@ class TestEITCCalculation:
             filing_status="SINGLE",
             resolver=resolver,
         )
-        # Phase-in: 0.0765 × 8260 = 631.89
-        # Phase-out: 0.0765 × (15000 - 9800) = 0.0765 × 5200 = 397.80
-        # Credit: 631.89 - 397.80 = 234.09
-        assert abs(credit - 234.09) < 1, f"Expected ~234.09, got {credit}"
+        # Phase-in: 0.0765 × 8260 = 631.89 (max credit)
+        # Phase-out: 0.0765 × (15000 - 10330) = 0.0765 × 4670 = 357.26
+        # Credit: 631.89 - 357.26 = 274.63
+        assert abs(credit - 274.63) < 1, f"Expected ~274.63, got {credit}"
 
     def test_eitc_joint_filer_higher_threshold(self, resolver):
         """Test that joint filers get higher phaseout threshold."""
