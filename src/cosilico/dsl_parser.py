@@ -18,6 +18,7 @@ class TokenType(Enum):
     IMPORT = "import"
     IMPORTS = "imports"  # Import block for variables and parameters
     REFERENCES = "references"  # Deprecated alias for imports (backwards compat)
+    PARAMETERS = "parameters"  # Parameter block for policy values
     VARIABLE = "variable"
     ENUM = "enum"
     ENTITY = "entity"
@@ -67,6 +68,10 @@ class TokenType(Enum):
     GE = ">="
     EQ = "=="
     NE = "!="
+    QUESTION = "?"
+    AMPERSAND = "&"  # Alternative for logical and
+    PIPE = "|"  # Alternative for logical or
+    HASH = "#"  # Fragment identifier in paths
 
     # Literals
     NUMBER = "NUMBER"
@@ -265,7 +270,7 @@ class Lexer:
     """Tokenizer for Cosilico DSL."""
 
     KEYWORDS = {
-        "module", "version", "jurisdiction", "import", "imports", "references", "variable", "enum",
+        "module", "version", "jurisdiction", "import", "imports", "references", "parameters", "variable", "enum",
         "entity", "period", "dtype", "label", "description",
         "unit", "formula", "defined_for", "default", "private", "internal",
         "let", "return", "if", "then", "else", "match", "case",
@@ -320,14 +325,23 @@ class Lexer:
         return ch
 
     def _skip_whitespace_and_comments(self):
+        consumed_whitespace = False
         while self.pos < len(self.source):
             ch = self.source[self.pos]
             if ch in ' \t\r\n':
+                consumed_whitespace = True
                 self._advance()
             elif ch == '#':
-                # Skip to end of line (# style comment)
-                while self.pos < len(self.source) and self.source[self.pos] != '\n':
-                    self._advance()
+                # # is a comment only if:
+                # 1. At start of line (column == 1), OR
+                # 2. After whitespace (we just consumed spaces/tabs/newlines)
+                # Otherwise it's a token (fragment identifier in paths)
+                if self.column == 1 or consumed_whitespace:
+                    while self.pos < len(self.source) and self.source[self.pos] != '\n':
+                        self._advance()
+                    consumed_whitespace = False  # Reset after consuming comment
+                else:
+                    break  # Not a comment, let tokenizer handle it
             elif ch == '/' and self.pos + 1 < len(self.source) and self.source[self.pos + 1] == '/':
                 # Skip to end of line (// style comment)
                 while self.pos < len(self.source) and self.source[self.pos] != '\n':
@@ -465,6 +479,14 @@ class Lexer:
             self.tokens.append(Token(TokenType.LT, ch, start_line, start_col))
         elif ch == '>':
             self.tokens.append(Token(TokenType.GT, ch, start_line, start_col))
+        elif ch == '?':
+            self.tokens.append(Token(TokenType.QUESTION, ch, start_line, start_col))
+        elif ch == '&':
+            self.tokens.append(Token(TokenType.AMPERSAND, ch, start_line, start_col))
+        elif ch == '|':
+            self.tokens.append(Token(TokenType.PIPE, ch, start_line, start_col))
+        elif ch == '#':
+            self.tokens.append(Token(TokenType.HASH, ch, start_line, start_col))
         else:
             raise SyntaxError(f"Unexpected character '{ch}' at line {start_line}, column {start_col}")
 
@@ -490,6 +512,9 @@ class Parser:
                 module.legacy_imports.append(self._parse_import())
             elif self._check(TokenType.IMPORTS) or self._check(TokenType.REFERENCES):
                 module.imports = self._parse_imports_block()
+            elif self._check(TokenType.PARAMETERS):
+                # Skip parameters block for now - parameters are loaded separately
+                self._skip_parameters_block()
             elif self._check(TokenType.PRIVATE) or self._check(TokenType.INTERNAL):
                 visibility = self._advance().value
                 if self._check(TokenType.VARIABLE):
@@ -584,6 +609,28 @@ class Parser:
 
         return ImportDecl(module_path=module_path, names=names, alias=alias)
 
+    def _skip_parameters_block(self):
+        """Skip over parameters block - these are loaded separately from YAML files."""
+        self._consume(TokenType.PARAMETERS, "Expected 'parameters'")
+        self._consume(TokenType.COLON, "Expected ':' after parameters")
+
+        # Skip until we hit a top-level keyword at column 1
+        # Keywords in paths (like 1001/parameters#key) should be skipped
+        top_level_keywords = {
+            TokenType.ENTITY, TokenType.PERIOD, TokenType.DTYPE,
+            TokenType.LABEL, TokenType.DESCRIPTION, TokenType.UNIT,
+            TokenType.FORMULA, TokenType.DEFINED_FOR, TokenType.DEFAULT,
+            TokenType.VARIABLE, TokenType.ENUM, TokenType.PRIVATE,
+            TokenType.INTERNAL, TokenType.MODULE, TokenType.VERSION,
+            TokenType.IMPORTS, TokenType.REFERENCES, TokenType.PARAMETERS,
+        }
+
+        while not self._is_at_end():
+            # Only consider keywords at column 1 as block terminators
+            if self._peek().column == 1 and any(self._check(kw) for kw in top_level_keywords):
+                break
+            self._advance()
+
     def _parse_imports_block(self) -> ReferencesBlock:
         """Parse an imports block mapping aliases to file paths.
 
@@ -613,7 +660,7 @@ class Parser:
             TokenType.FORMULA, TokenType.DEFINED_FOR, TokenType.DEFAULT,
             TokenType.VARIABLE, TokenType.ENUM, TokenType.PRIVATE,
             TokenType.INTERNAL, TokenType.MODULE, TokenType.VERSION,
-            TokenType.IMPORTS, TokenType.REFERENCES,
+            TokenType.IMPORTS, TokenType.REFERENCES, TokenType.PARAMETERS,
         }
 
         while not self._is_at_end():
@@ -641,20 +688,35 @@ class Parser:
         """Parse a statute path like 'us/irc/subtitle_a/.../§32/c/2/A/variable_name'."""
         # Consume tokens until we hit something that's not part of a path
         # Path components: identifiers, numbers, §, /, .
+        # Keywords like 'parameters', 'imports' can also appear in paths
         parts = []
 
-        # First component must be identifier
-        parts.append(self._consume(TokenType.IDENTIFIER, "Expected path component").value)
+        # Keywords that can appear in paths as identifiers
+        path_keywords = {
+            TokenType.PARAMETERS, TokenType.IMPORTS, TokenType.REFERENCES,
+            TokenType.ENTITY, TokenType.PERIOD, TokenType.DTYPE,
+            TokenType.VARIABLE, TokenType.FORMULA,
+        }
+
+        # First component must be identifier or path-allowed keyword
+        if self._check(TokenType.IDENTIFIER):
+            parts.append(self._advance().value)
+        elif any(self._check(kw) for kw in path_keywords):
+            parts.append(self._advance().value)
+        else:
+            parts.append(self._consume(TokenType.IDENTIFIER, "Expected path component").value)
 
         while True:
             if self._check(TokenType.SLASH):
                 self._advance()
                 parts.append("/")
-                # Next can be identifier, number, or special chars
+                # Next can be identifier, number, keyword, or special chars
                 if self._check(TokenType.IDENTIFIER):
                     parts.append(self._advance().value)
                 elif self._check(TokenType.NUMBER):
                     parts.append(str(self._advance().value))
+                elif any(self._check(kw) for kw in path_keywords):
+                    parts.append(self._advance().value)
                 else:
                     break
             elif self._check(TokenType.DOT):
@@ -664,6 +726,17 @@ class Parser:
                 if self._check(TokenType.DOT):
                     self._advance()
                     parts.append(".")
+            elif self._check(TokenType.HASH):
+                # Fragment identifier like path#fragment
+                self._advance()
+                parts.append("#")
+                # Fragment name must be identifier or keyword
+                if self._check(TokenType.IDENTIFIER):
+                    parts.append(self._advance().value)
+                elif any(self._check(kw) for kw in path_keywords):
+                    parts.append(self._advance().value)
+                # Fragment is the end of the path
+                break
             else:
                 break
 
@@ -799,7 +872,7 @@ class Parser:
             TokenType.LABEL, TokenType.DESCRIPTION, TokenType.UNIT,
             TokenType.FORMULA, TokenType.VARIABLE, TokenType.ENUM,
             TokenType.MODULE, TokenType.VERSION, TokenType.IMPORTS,
-            TokenType.REFERENCES,
+            TokenType.REFERENCES, TokenType.PARAMETERS,
         }
 
         while not self._is_at_end():
@@ -813,6 +886,27 @@ class Parser:
                 self._advance()
                 return_expr = self._parse_expression()
                 break
+            elif self._check(TokenType.IF):
+                # Statement-level if: "if condition then \n return value"
+                # This is an early-exit pattern, not an if-expression
+                if_expr = self._parse_statement_if()
+                if if_expr is not None:
+                    # Early return with condition - wrap as conditional return
+                    # Create a conditional binding that evaluates to the return value
+                    # and continue parsing
+                    # For now, we handle this as a conditional with early-exit semantics
+                    # by wrapping remaining formula in the else branch
+                    early_return_condition = if_expr.condition
+                    early_return_value = if_expr.then_branch
+                    # Parse rest of formula as the "else" case
+                    rest_bindings, rest_expr = self._parse_rest_of_formula(end_keywords)
+                    # Wrap in conditional: if condition then early_return else rest
+                    return_expr = IfExpr(
+                        condition=early_return_condition,
+                        then_branch=early_return_value,
+                        else_branch=self._wrap_bindings_as_expr(rest_bindings, rest_expr)
+                    )
+                    break
             elif self._check(TokenType.IDENTIFIER):
                 # Could be assignment: name = expr
                 if self._peek_next_is(TokenType.EQUALS):
@@ -830,6 +924,77 @@ class Parser:
                 return_expr = self._parse_expression()
                 break
 
+        return FormulaBlock(bindings=bindings, return_expr=return_expr)
+
+    def _parse_statement_if(self) -> Optional[IfExpr]:
+        """Parse statement-level if: 'if condition then' followed by 'return value'.
+
+        Returns an IfExpr with condition and then_branch (the return value),
+        or None if this isn't a statement-level if.
+        """
+        self._consume(TokenType.IF, "Expected 'if'")
+        condition = self._parse_expression()
+        self._consume(TokenType.THEN, "Expected 'then'")
+
+        # Check if next token is RETURN (statement-level if)
+        if self._check(TokenType.RETURN):
+            self._advance()  # consume 'return'
+            then_value = self._parse_expression()
+            return IfExpr(condition=condition, then_branch=then_value, else_branch=Literal(value=0, dtype="number"))
+        else:
+            # This is an expression-level if, parse as normal
+            then_branch = self._parse_expression()
+            self._consume(TokenType.ELSE, "Expected 'else'")
+            else_branch = self._parse_expression()
+            return IfExpr(condition=condition, then_branch=then_branch, else_branch=else_branch)
+
+    def _parse_rest_of_formula(self, end_keywords: set) -> tuple[list[LetBinding], Optional[Expression]]:
+        """Parse remaining bindings and return expression after an early-exit if."""
+        bindings = []
+        return_expr = None
+
+        while not self._is_at_end():
+            if any(self._check(kw) for kw in end_keywords):
+                break
+
+            if self._check(TokenType.LET):
+                bindings.append(self._parse_let_binding())
+            elif self._check(TokenType.RETURN):
+                self._advance()
+                return_expr = self._parse_expression()
+                break
+            elif self._check(TokenType.IDENTIFIER):
+                if self._peek_next_is(TokenType.EQUALS):
+                    name = self._advance().value
+                    self._consume(TokenType.EQUALS, "Expected '='")
+                    value = self._parse_expression()
+                    bindings.append(LetBinding(name=name, value=value))
+                else:
+                    return_expr = self._parse_expression()
+                    break
+            else:
+                return_expr = self._parse_expression()
+                break
+
+        return bindings, return_expr
+
+    def _wrap_bindings_as_expr(self, bindings: list[LetBinding], return_expr: Optional[Expression]) -> Expression:
+        """Wrap a list of bindings and a return expression as a single expression.
+
+        For execution, we need to represent let bindings + return as a single expression.
+        We use a nested structure of function applications to simulate let bindings.
+        """
+        if not bindings:
+            return return_expr if return_expr else Literal(value=0, dtype="number")
+
+        # For now, if there are bindings, create a LetExpr-like structure
+        # by using the last binding's value modified to include the return
+        # This is a simplification - ideally we'd have proper let-in expressions
+        # For the standard_deduction case: basic = ..., return basic + additional
+        # We wrap as: (let basic = ... in basic + additional)
+
+        # Create a simplified representation using FormulaBlock
+        # The executor will need to handle this appropriately
         return FormulaBlock(bindings=bindings, return_expr=return_expr)
 
     def _parse_variable(self) -> VariableDef:
@@ -986,12 +1151,25 @@ class Parser:
         return LetBinding(name=name, value=value)
 
     def _parse_expression(self) -> Expression:
-        return self._parse_or_expr()
+        return self._parse_ternary()
+
+    def _parse_ternary(self) -> Expression:
+        """Parse ternary operator: condition ? then_value : else_value"""
+        condition = self._parse_or_expr()
+
+        if self._check(TokenType.QUESTION):
+            self._advance()  # consume '?'
+            then_branch = self._parse_expression()
+            self._consume(TokenType.COLON, "Expected ':' in ternary expression")
+            else_branch = self._parse_expression()
+            return IfExpr(condition=condition, then_branch=then_branch, else_branch=else_branch)
+
+        return condition
 
     def _parse_or_expr(self) -> Expression:
         left = self._parse_and_expr()
 
-        while self._check(TokenType.OR):
+        while self._check(TokenType.OR) or self._check(TokenType.PIPE):
             self._advance()
             right = self._parse_and_expr()
             left = BinaryOp(op="or", left=left, right=right)
@@ -1001,7 +1179,7 @@ class Parser:
     def _parse_and_expr(self) -> Expression:
         left = self._parse_comparison()
 
-        while self._check(TokenType.AND):
+        while self._check(TokenType.AND) or self._check(TokenType.AMPERSAND):
             self._advance()
             right = self._parse_comparison()
             left = BinaryOp(op="and", left=left, right=right)
