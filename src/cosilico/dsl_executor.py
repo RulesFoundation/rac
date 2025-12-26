@@ -283,7 +283,7 @@ def _call_builtin(name: str, args: list[Any], ctx: ExecutionContext) -> Any:
             return max(args[1], min(args[0], args[2]))
         return args[0] if args else 0
 
-    # Bracket scale methods
+    # Bracket scale methods (legacy)
     if func_name == "marginal_rate":
         # Need to get the bracket scale from the base path
         if len(parts) > 1:
@@ -291,6 +291,31 @@ def _call_builtin(name: str, args: list[Any], ctx: ExecutionContext) -> Any:
             brackets = ctx.get_parameter(base_path)
             if isinstance(brackets, dict) and "thresholds" in brackets and "rates" in brackets:
                 return _calculate_marginal_rate(brackets, args[0] if args else 0)
+        return 0
+
+    # New bracket functions: cut and marginal_agg
+    if func_name == "cut":
+        from .brackets import cut as bracket_cut
+        # cut(amount, schedule, threshold_by=None, amount_by=None)
+        # Args: amount, schedule, [threshold_by], [amount_by]
+        if len(args) >= 2:
+            amount = args[0]
+            schedule = args[1]
+            threshold_by = args[2] if len(args) > 2 else None
+            amount_by = args[3] if len(args) > 3 else None
+            return bracket_cut(amount, schedule, threshold_by=threshold_by, amount_by=amount_by)
+        return 0
+
+    if func_name == "marginal_agg":
+        from .brackets import marginal_agg as bracket_marginal_agg
+        # marginal_agg(amount, brackets, threshold_by=None, rate_by=None)
+        # Args: amount, brackets, [threshold_by], [rate_by]
+        if len(args) >= 2:
+            amount = args[0]
+            brackets = args[1]
+            threshold_by = args[2] if len(args) > 2 else None
+            rate_by = args[3] if len(args) > 3 else None
+            return bracket_marginal_agg(amount, brackets, threshold_by=threshold_by, rate_by=rate_by)
         return 0
 
     # If function not found, return 0
