@@ -120,6 +120,7 @@ def marginal_agg(
     brackets: Dict[str, Any],
     threshold_by: Optional[Any] = None,
     rate_by: Optional[Any] = None,
+    offset: Union[float, np.ndarray] = 0,
 ) -> Union[float, np.ndarray]:
     """Marginal rate aggregation - sum of (amount in bracket * rate) for each bracket.
 
@@ -128,6 +129,8 @@ def marginal_agg(
         brackets: Dict with 'thresholds' and 'rates' keys
         threshold_by: Key to index into thresholds (if thresholds vary by category)
         rate_by: Key to index into rates (if rates vary by category, rare)
+        offset: Starting position in brackets (e.g., ordinary income for cap gains)
+                The offset "uses up" bracket space before amount is applied.
 
     Returns:
         Sum of marginal amounts times rates
@@ -139,6 +142,11 @@ def marginal_agg(
         }
         marginal_agg(15000, brackets)
         # = 10000 * 0.10 + 5000 * 0.20 = 2000
+
+        # With offset (e.g., capital gains after ordinary income):
+        marginal_agg(20000, brackets, offset=35000)
+        # Offset of 35000 uses up first bracket and part of second
+        # 20000 of preferential income: 5000 at 0.20, 15000 at 0.30
 
         # With threshold_by for filing status:
         brackets = {
@@ -168,34 +176,61 @@ def marginal_agg(
     amount = np.asarray(amount)
     thresholds = np.asarray(thresholds)
     rates = np.asarray(rates)
+    offset = np.asarray(offset)
 
     # Calculate marginal amounts and aggregate
-    return _marginal_agg_core(amount, thresholds, rates)
+    return _marginal_agg_core(amount, thresholds, rates, offset)
 
 
 def _marginal_agg_core(
     amount: np.ndarray,
     thresholds: np.ndarray,
     rates: np.ndarray,
+    offset: np.ndarray = None,
 ) -> Union[float, np.ndarray]:
-    """Core marginal aggregation calculation."""
+    """Core marginal aggregation calculation.
+
+    When offset is provided, it represents income that has already "used up"
+    some bracket space. The amount is applied starting from where offset ends.
+
+    Example: With thresholds [0, 10000, 40000] and offset=35000:
+    - Offset uses all of bracket 0 (0-10000) and 25000 of bracket 1 (10000-40000)
+    - Amount starts at position 35000, with 5000 remaining in bracket 1
+    """
     # Handle scalar case
     scalar_input = amount.ndim == 0
     if scalar_input:
         amount = np.atleast_1d(amount)
 
+    if offset is None:
+        offset = np.zeros_like(amount)
+    else:
+        offset = np.atleast_1d(offset)
+        # Broadcast offset to match amount shape if needed
+        if offset.shape != amount.shape:
+            offset = np.broadcast_to(offset, amount.shape).copy()
+
     n_brackets = len(rates)
     result = np.zeros_like(amount, dtype=float)
+
+    # Total position = offset + amount (where we end up in the brackets)
+    total_position = offset + amount
 
     for i in range(n_brackets):
         bracket_start = thresholds[i]
         bracket_end = thresholds[i + 1] if i + 1 < len(thresholds) else np.inf
         rate = rates[i]
 
-        # Amount in this bracket
-        amount_in_bracket = np.clip(amount - bracket_start, 0, bracket_end - bracket_start)
-        # Only count if we're above the bracket start
-        amount_in_bracket = np.where(amount > bracket_start, amount_in_bracket, 0)
+        # How much of this bracket is available after offset?
+        # If offset > bracket_end, this bracket is fully used by offset
+        # If offset < bracket_start, this bracket is fully available
+        offset_in_bracket = np.clip(offset - bracket_start, 0, bracket_end - bracket_start)
+        bracket_space_remaining = (bracket_end - bracket_start) - offset_in_bracket
+
+        # How much of the amount lands in this bracket?
+        # It's the portion of total_position in this bracket, minus what offset used
+        total_in_bracket = np.clip(total_position - bracket_start, 0, bracket_end - bracket_start)
+        amount_in_bracket = np.maximum(0, total_in_bracket - offset_in_bracket)
 
         result += amount_in_bracket * rate
 

@@ -219,3 +219,72 @@ class TestMarginalAgg:
         # Single: 10000 * 0.10 + 5000 * 0.20 = 2000
         # Joint: 15000 * 0.10 = 1500
         np.testing.assert_array_almost_equal(result, [2000, 1500])
+
+    def test_offset_basic(self):
+        """Offset shifts where amount starts in brackets."""
+        brackets = {
+            "thresholds": [0, 10000, 40000],
+            "rates": [0.10, 0.20, 0.30],
+        }
+        # Without offset: 15000 income
+        # 10000 * 0.10 + 5000 * 0.20 = 2000
+        assert marginal_agg(15000, brackets) == pytest.approx(2000)
+
+        # With offset of 5000 (ordinary income already used 5000 of first bracket)
+        # Preferential income of 15000 starts at position 5000
+        # 5000 at 0.10 (fills rest of first bracket) + 10000 at 0.20 = 2500
+        assert marginal_agg(15000, brackets, offset=5000) == pytest.approx(2500)
+
+    def test_offset_skips_bracket(self):
+        """Offset can skip entire brackets."""
+        brackets = {
+            "thresholds": [0, 10000, 40000],
+            "rates": [0.10, 0.20, 0.30],
+        }
+        # Offset of 35000 uses all of first bracket and 25000 of second
+        # Preferential income of 10000 starts at position 35000
+        # 5000 at 0.20 (fills rest of second bracket) + 5000 at 0.30 = 2500
+        assert marginal_agg(10000, brackets, offset=35000) == pytest.approx(2500)
+
+    def test_offset_capital_gains_pattern(self):
+        """Test the capital gains pattern: ordinary income fills brackets first."""
+        brackets = {
+            "thresholds": {
+                "single": [0, 47025, 518900],
+            },
+            "rates": [0.00, 0.15, 0.20],
+        }
+        # Single filer with $50,000 ordinary income and $30,000 cap gains
+        ordinary_income = 50000
+        cap_gains = 30000
+
+        # Ordinary income uses up the 0% bracket (0-47025) and 2975 of 15% bracket
+        # Cap gains of 30000: all at 15% rate
+        result = marginal_agg(cap_gains, brackets, threshold_by="single", offset=ordinary_income)
+        expected = 30000 * 0.15  # All cap gains in 15% bracket
+        assert result == pytest.approx(expected)
+
+    def test_offset_all_in_zero_bracket(self):
+        """When offset + amount stays in 0% bracket, tax is 0."""
+        brackets = {
+            "thresholds": [0, 47025, 518900],
+            "rates": [0.00, 0.15, 0.20],
+        }
+        # $20,000 ordinary income, $10,000 cap gains
+        # Total $30,000 stays in 0% bracket
+        result = marginal_agg(10000, brackets, offset=20000)
+        assert result == pytest.approx(0)
+
+    def test_offset_vectorized(self):
+        """Offset works with vectorized inputs."""
+        brackets = {
+            "thresholds": [0, 10000, 40000],
+            "rates": [0.10, 0.20, 0.30],
+        }
+        amounts = np.array([15000, 15000, 15000])
+        offsets = np.array([0, 5000, 35000])
+        result = marginal_agg(amounts, brackets, offset=offsets)
+        # offset=0: 10000*0.10 + 5000*0.20 = 2000
+        # offset=5000: 5000*0.10 + 10000*0.20 = 2500
+        # offset=35000: 5000*0.20 + 10000*0.30 = 4000
+        np.testing.assert_array_almost_equal(result, [2000, 2500, 4000])
