@@ -53,7 +53,7 @@ We set the following targets. These are goals, not demonstrated results:
 
 ### Language choice: custom DSL
 
-Cosilico uses a purpose-built domain-specific language (`.cosilico` files) rather than Python decorators. See **[DSL.md](./DSL.md)** for the full specification.
+Cosilico uses a purpose-built domain-specific language (`.rac` files) rather than Python decorators. See **[DSL.md](./DSL.md)** for the full specification.
 
 **Key reasons for a custom DSL:**
 
@@ -86,7 +86,7 @@ variable eitc {
 │                          DEFINITION LAYER                            │
 │                                                                      │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐               │
-│  │   .cosilico  │  │  parameters  │  │   entities   │               │
+│  │   .rac  │  │  parameters  │  │   entities   │               │
 │  │    files     │  │    .yaml     │  │    .yaml     │               │
 │  └──────────────┘  └──────────────┘  └──────────────┘               │
 │         │                 │                 │                        │
@@ -149,7 +149,7 @@ variable eitc {
 
 | Component | Responsibility | Key outputs |
 |-----------|---------------|-------------|
-| **Parser** | Parse .cosilico files via Tree-sitter grammar | Raw AST nodes |
+| **Parser** | Parse .rac files via Tree-sitter grammar | Raw AST nodes |
 | **Dependency Graph** | Build variable dependency DAG | Topological order |
 | **Type Checker** | Validate types, periods, entities | Type-annotated IR |
 | **Period Validator** | Check period compatibility | Period-checked IR |
@@ -2675,7 +2675,7 @@ Users can:
 
 ### 17.3 What's paid (our infrastructure)
 
-When users call `api.cosilico.ai`, they pay for:
+When users call `api.rac.ai`, they pay for:
 
 | Service | Cost Driver | Why Paid |
 |---------|-------------|----------|
@@ -3370,12 +3370,12 @@ lawarchive pull "26 USC 32" --vintage=2024-01-01
 # Creates local workspace:
 # ~/.lawarchive/workspace/federal/statute/26/32/
 #   ├── statute.md          # Raw text (read-only reference)
-#   ├── rules.cosilico      # DSL encoding (editable)
+#   ├── rules.rac      # DSL encoding (editable)
 #   ├── tests.yaml          # Test cases
 #   └── metadata.json       # Vintage, provenance
 
 # Edit locally (Claude or human)
-claude "update rules.cosilico to handle the new phase-out"
+claude "update rules.rac to handle the new phase-out"
 
 # Validate before push
 lawarchive validate ./26/32/

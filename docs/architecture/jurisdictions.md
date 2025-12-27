@@ -71,7 +71,7 @@ The engine coordinates calculations that span jurisdictions.
 Most state tax calculations depend on federal:
 
 ```python
-# us-ca/rtc/.../§17041/(a)/variables/ca_taxable_income.cosilico
+# us-ca/rtc/.../§17041/(a)/variables/ca_taxable_income.rac
 
 references:
   federal_agi: us/irc/.../§62/(a)/adjusted_gross_income
@@ -89,7 +89,7 @@ California imports `federal_agi` from the federal repo. The engine resolves this
 The State and Local Tax (SALT) deduction creates a reverse dependency:
 
 ```python
-# us/irc/.../§164/(a)/variables/salt_deduction.cosilico
+# us/irc/.../§164/(a)/variables/salt_deduction.rac
 
 references:
   state_income_taxes: aggregate(us-*/tax_liability)  # All installed state repos

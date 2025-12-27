@@ -14,10 +14,10 @@ The Cosilico DSL encodes tax and benefit statutes as executable rules. Design pr
 
 ### One Variable Per File
 
-Each `.cosilico` file defines exactly one variable. The filename IS the variable name.
+Each `.rac` file defines exactly one variable. The filename IS the variable name.
 
 ```
-statute/26/32/a/1/earned_income_credit.cosilico
+statute/26/32/a/1/earned_income_credit.rac
 ```
 
 Defines the variable `earned_income_credit`.
@@ -25,7 +25,7 @@ Defines the variable `earned_income_credit`.
 ### Basic Structure
 
 ```cosilico
-# statute/26/32/a/1/earned_income_credit.cosilico
+# statute/26/32/a/1/earned_income_credit.rac
 
 imports:
   earned_income: statute/26/32/c/2/A/earned_income
@@ -313,7 +313,7 @@ rate = credit_rate[n_children]
 All tests go in separate `.test.yaml` files:
 
 ```
-statute/26/32/a/1/earned_income_credit.cosilico
+statute/26/32/a/1/earned_income_credit.rac
 statute/26/32/a/1/earned_income_credit.test.yaml
 ```
 
@@ -369,7 +369,7 @@ Valid fields: entity, period, dtype, label, description, unit,
 Credits follow the statute structure. Section 26 maintains the list of sections excluded from the nonrefundable limitation:
 
 ```cosilico
-# statute/26/26/a/nonrefundable_credit_limitation.cosilico
+# statute/26/26/a/nonrefundable_credit_limitation.rac
 
 imports:
   tax_liability: statute/26/1/tax_liability
@@ -531,7 +531,7 @@ output: 6604
 ## Full Example
 
 ```cosilico
-# statute/26/32/a/1/earned_income_credit.cosilico
+# statute/26/32/a/1/earned_income_credit.rac
 #
 # 26 USC 32(a)(1): "In the case of an eligible individual, there shall
 # be allowed as a credit against the tax imposed by this subtitle..."

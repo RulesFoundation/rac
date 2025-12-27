@@ -6,7 +6,7 @@ Core DSL parser, executor, and vectorized runtime for Cosilico.
 
 **This repo contains ONLY the DSL infrastructure. NO statute files.**
 
-Country-specific rules (.cosilico files) belong in:
+Country-specific rules (.rac files) belong in:
 - `cosilico-us/` - US federal statutes (Title 26 IRC, Title 7 SNAP)
 - `cosilico-uk/` - UK statutes (future)
 
@@ -23,7 +23,7 @@ This separation has been violated multiple times. DO NOT add statute files here.
 ## What Does NOT Belong Here
 
 - `statute/` directory - DELETE if it exists
-- `.cosilico` files with real statute encodings
+- `.rac` files with real statute encodings
 - `parameters.yaml` with real IRS values
 
 ## Commands

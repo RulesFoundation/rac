@@ -240,7 +240,7 @@ Types requiring justification:
 
 All code, data, and analysis will be available at:
 - Repository: https://github.com/CosilicoAI/cosilico-engine
-- Paper: https://docs.cosilico.ai/paper/
+- Paper: https://docs.rac.ai/paper/
 
 ---
 

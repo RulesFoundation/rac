@@ -165,7 +165,7 @@ def initial_credit_amount() -> Money:
 ```
 
 The engine distinguishes by what's at the path:
-- `.cosilico` file → variable (formula)
+- `.rac` file → variable (formula)
 - `.yaml` file → parameter (time-varying data)
 
 ## Engine Resolution

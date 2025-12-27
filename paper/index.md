@@ -27,6 +27,6 @@ We demonstrate that large language models can automatically encode statutory pro
   title={AI-Driven Rules-as-Code Encoding: Reinforcement Learning from Implementation Feedback},
   author={Cosilico AI},
   year={2024},
-  url={https://docs.cosilico.ai/paper}
+  url={https://docs.rac.ai/paper}
 }
 ```

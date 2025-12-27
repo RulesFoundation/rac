@@ -52,7 +52,7 @@ def calculate_income_tax(
     thresholds = []
     for rate in rates:
         threshold = resolver.resolve(
-            "statute/26/1/brackets/base_thresholds",
+            "statute/26/1",
             fragment=filing_status,
             tax_year=tax_year,
             rate=rate,
@@ -91,7 +91,7 @@ class TestTaxBracketResolution:
         """Verify 2024 IRS single filer thresholds are loaded correctly."""
         # 10% bracket starts at $0
         t10 = resolver.resolve(
-            "statute/26/1/brackets/base_thresholds",
+            "statute/26/1",
             fragment="single",
             tax_year=2024,
             rate=0.10,
@@ -100,7 +100,7 @@ class TestTaxBracketResolution:
 
         # 12% bracket starts at $11,600
         t12 = resolver.resolve(
-            "statute/26/1/brackets/base_thresholds",
+            "statute/26/1",
             fragment="single",
             tax_year=2024,
             rate=0.12,
@@ -109,7 +109,7 @@ class TestTaxBracketResolution:
 
         # 22% bracket starts at $47,150
         t22 = resolver.resolve(
-            "statute/26/1/brackets/base_thresholds",
+            "statute/26/1",
             fragment="single",
             tax_year=2024,
             rate=0.22,
@@ -118,7 +118,7 @@ class TestTaxBracketResolution:
 
         # 37% bracket starts at $609,350
         t37 = resolver.resolve(
-            "statute/26/1/brackets/base_thresholds",
+            "statute/26/1",
             fragment="single",
             tax_year=2024,
             rate=0.37,
@@ -129,7 +129,7 @@ class TestTaxBracketResolution:
         """Verify 2024 IRS married filing jointly thresholds."""
         # 12% bracket starts at $23,200 for MFJ
         t12 = resolver.resolve(
-            "statute/26/1/brackets/base_thresholds",
+            "statute/26/1",
             fragment="married_filing_jointly",
             tax_year=2024,
             rate=0.12,
@@ -138,7 +138,7 @@ class TestTaxBracketResolution:
 
         # 37% bracket starts at $731,200 for MFJ
         t37 = resolver.resolve(
-            "statute/26/1/brackets/base_thresholds",
+            "statute/26/1",
             fragment="married_filing_jointly",
             tax_year=2024,
             rate=0.37,
@@ -149,7 +149,7 @@ class TestTaxBracketResolution:
         """Verify 2024 IRS head of household thresholds."""
         # 12% bracket starts at $16,550 for HoH
         t12 = resolver.resolve(
-            "statute/26/1/brackets/base_thresholds",
+            "statute/26/1",
             fragment="head_of_household",
             tax_year=2024,
             rate=0.12,
@@ -160,7 +160,7 @@ class TestTaxBracketResolution:
         """Verify 2024 IRS married filing separately thresholds."""
         # MFS uses half of MFJ thresholds for most brackets
         t12 = resolver.resolve(
-            "statute/26/1/brackets/base_thresholds",
+            "statute/26/1",
             fragment="married_filing_separately",
             tax_year=2024,
             rate=0.12,
@@ -169,7 +169,7 @@ class TestTaxBracketResolution:
 
         # 37% threshold is $365,600 (half of MFJ $731,200)
         t37 = resolver.resolve(
-            "statute/26/1/brackets/base_thresholds",
+            "statute/26/1",
             fragment="married_filing_separately",
             tax_year=2024,
             rate=0.37,
@@ -180,7 +180,7 @@ class TestTaxBracketResolution:
         """Test that base TCJA 2018 values are used when no override exists."""
         # For 2018, should get base TCJA values (no IRS override for 2018)
         t12 = resolver.resolve(
-            "statute/26/1/brackets/base_thresholds",
+            "statute/26/1",
             fragment="single",
             tax_year=2018,
             rate=0.12,

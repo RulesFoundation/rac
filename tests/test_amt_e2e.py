@@ -70,10 +70,10 @@ def calculate_amt(
     5. AMT = max(0, TMT - regular_tax) (Section 55(a))
     """
     # Load exemption amounts
-    exemption_data = resolver.load_base_value("statute/26/55/d/1/exemption")
-    phaseout_data = resolver.load_base_value("statute/26/55/d/2/phaseout")
-    rate_data = resolver.load_base_value("statute/26/55/b/1/rate")
-    bracket_data = resolver.load_base_value("statute/26/55/b/3/bracket")
+    exemption_data = resolver.load_base_value("statute/26/55/d/1")
+    phaseout_data = resolver.load_base_value("statute/26/55/d/2")
+    rate_data = resolver.load_base_value("statute/26/55/b/1")
+    bracket_data = resolver.load_base_value("statute/26/55/b/3")
 
     # Get values based on filing status
     fs = filing_status.upper()
@@ -146,50 +146,50 @@ class TestAMTParameterLoading:
 
     def test_exemption_2024_joint(self, resolver):
         """Verify joint exemption is $133,300 for 2024."""
-        data = resolver.load_base_value("statute/26/55/d/1/exemption")
+        data = resolver.load_base_value("statute/26/55/d/1")
         assert data is not None
         value = get_value_for_year(data["exemption_joint"]["values"], 2024)
         assert value == 133300
 
     def test_exemption_2024_single(self, resolver):
         """Verify single exemption is $85,700 for 2024."""
-        data = resolver.load_base_value("statute/26/55/d/1/exemption")
+        data = resolver.load_base_value("statute/26/55/d/1")
         value = get_value_for_year(data["exemption_single"]["values"], 2024)
         assert value == 85700
 
     def test_exemption_2024_mfs(self, resolver):
         """Verify MFS exemption is $66,650 for 2024."""
-        data = resolver.load_base_value("statute/26/55/d/1/exemption")
+        data = resolver.load_base_value("statute/26/55/d/1")
         value = get_value_for_year(data["exemption_married_separate"]["values"], 2024)
         assert value == 66650
 
     def test_phaseout_threshold_2024_joint(self, resolver):
         """Verify joint phaseout threshold is $1,218,700 for 2024."""
-        data = resolver.load_base_value("statute/26/55/d/2/phaseout")
+        data = resolver.load_base_value("statute/26/55/d/2")
         value = get_value_for_year(data["phaseout_threshold_joint"]["values"], 2024)
         assert value == 1218700
 
     def test_phaseout_threshold_2024_single(self, resolver):
         """Verify single phaseout threshold is $609,350 for 2024."""
-        data = resolver.load_base_value("statute/26/55/d/2/phaseout")
+        data = resolver.load_base_value("statute/26/55/d/2")
         value = get_value_for_year(data["phaseout_threshold_single"]["values"], 2024)
         assert value == 609350
 
     def test_phaseout_rate(self, resolver):
         """Verify phaseout rate is 25%."""
-        data = resolver.load_base_value("statute/26/55/d/2/phaseout")
+        data = resolver.load_base_value("statute/26/55/d/2")
         value = get_value_for_year(data["phaseout_rate"]["values"], 2024)
         assert value == 0.25
 
     def test_rates(self, resolver):
         """Verify AMT rates are 26% and 28%."""
-        data = resolver.load_base_value("statute/26/55/b/1/rate")
+        data = resolver.load_base_value("statute/26/55/b/1")
         assert get_value_for_year(data["amt_rate_low"]["values"], 2024) == 0.26
         assert get_value_for_year(data["amt_rate_high"]["values"], 2024) == 0.28
 
     def test_bracket_2024(self, resolver):
         """Verify 2024 bracket thresholds."""
-        data = resolver.load_base_value("statute/26/55/b/3/bracket")
+        data = resolver.load_base_value("statute/26/55/b/3")
         assert get_value_for_year(data["amt_bracket_joint"]["values"], 2024) == 232600
         assert get_value_for_year(data["amt_bracket_single"]["values"], 2024) == 116300
 

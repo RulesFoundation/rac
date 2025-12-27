@@ -1,6 +1,6 @@
 """Dependency resolver for cross-file statute references.
 
-Resolves references between .cosilico files, builds a dependency graph,
+Resolves references between .rac files, builds a dependency graph,
 and provides execution order via topological sort.
 
 Example:
@@ -149,7 +149,7 @@ class ModuleResolver:
             statute_path: Path like "statute/26/32/c/2/A/earned_income"
 
         Returns:
-            Absolute path to the .cosilico file
+            Absolute path to the .rac file
 
         Raises:
             ModuleNotFoundError: If file doesn't exist
@@ -158,17 +158,17 @@ class ModuleResolver:
         # Files are organized as: cosilico-us/statute/26/32/...
         clean_path = statute_path
 
-        # Try with .cosilico extension
-        file_path = self.statute_root / f"{clean_path}.cosilico"
+        # Try with .rac extension
+        file_path = self.statute_root / f"{clean_path}.rac"
         if file_path.exists():
             return file_path
 
         # Try as directory with same-named file inside
         dir_path = self.statute_root / clean_path
         if dir_path.is_dir():
-            # Look for a .cosilico file with the last component name
+            # Look for a .rac file with the last component name
             name = Path(clean_path).name
-            candidate = dir_path / f"{name}.cosilico"
+            candidate = dir_path / f"{name}.rac"
             if candidate.exists():
                 return candidate
 

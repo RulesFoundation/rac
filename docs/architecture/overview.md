@@ -47,7 +47,7 @@ Cosilico is a rules engine for encoding tax and benefit law as executable code.
 Atomic units of calculation, one per statutory clause:
 
 ```python
-# us/irc/.../§32/(a)/(2)/(A)/variables/initial_credit_amount.cosilico
+# us/irc/.../§32/(a)/(2)/(A)/variables/initial_credit_amount.rac
 
 references:
   earned_income: us/irc/.../§32/(c)/(2)/(A)/earned_income

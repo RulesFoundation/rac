@@ -29,13 +29,13 @@ class ValidationResult:
     @property
     def difference(self) -> float:
         """Absolute difference between Cosilico and reference."""
-        return self.cosilico_value - self.reference_value
+        return self.rac_value - self.reference_value
 
     @property
     def relative_error(self) -> float:
         """Relative error (0 if reference is 0)."""
         if self.reference_value == 0:
-            return 0.0 if self.cosilico_value == 0 else float("inf")
+            return 0.0 if self.rac_value == 0 else float("inf")
         return abs(self.difference) / abs(self.reference_value)
 
 

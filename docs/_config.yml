@@ -15,7 +15,7 @@ html:
   use_issues_button: true
   use_edit_page_button: true
   home_page_in_navbar: false
-  baseurl: https://docs.cosilico.ai
+  baseurl: https://docs.rac.ai
   extra_footer: ""
 
 # Repository settings

@@ -42,8 +42,8 @@ Code structure mirrors legal structure. The path IS the citation:
 cosilico-us/
 └── irc/
     └── subtitle_a/.../§32/
-        ├── (a)/(1)/earned_income_credit.cosilico
-        ├── (a)/(2)/(A)/initial_credit_amount.cosilico
+        ├── (a)/(1)/earned_income_credit.rac
+        ├── (a)/(2)/(A)/initial_credit_amount.rac
         └── (b)/(1)/credit_percentage.yaml
 ```
 

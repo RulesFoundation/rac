@@ -11,7 +11,7 @@ execute:
 html:
   favicon: ../docs/favicon.svg
   use_repository_button: true
-  baseurl: https://docs.cosilico.ai/paper
+  baseurl: https://docs.rac.ai/paper
 
 repository:
   url: https://github.com/CosilicoAI/cosilico-engine

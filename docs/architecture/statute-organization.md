@@ -50,12 +50,12 @@ calculations/
 Cosilico organizes by statutory citation:
 ```
 statute/26/32/                                   # §32 - EITC
-├── a/1/earned_income_credit.cosilico           # §32(a)(1)
-├── a/2/A/initial_credit_amount.cosilico        # §32(a)(2)(A)
-├── a/2/B/credit_reduction_amount.cosilico      # §32(a)(2)(B)
+├── a/1/earned_income_credit.rac           # §32(a)(1)
+├── a/2/A/initial_credit_amount.rac        # §32(a)(2)(A)
+├── a/2/B/credit_reduction_amount.rac      # §32(a)(2)(B)
 ├── b/1/credit_percentage.yaml                  # §32(b)(1) parameters
 ├── b/2/A/amounts.yaml                          # §32(b)(2)(A) indexed amounts
-├── c/2/A/earned_income.cosilico                # §32(c)(2)(A) definition
+├── c/2/A/earned_income.rac                # §32(c)(2)(A) definition
 ├── i/1/disqualified_income_limit.yaml          # §32(i)(1) parameter
 ├── j/1/indexing_rule.yaml                      # §32(j)(1) indexing
 └── j/2/rounding_rules.yaml                     # §32(j)(2) rounding
@@ -103,17 +103,17 @@ Each statutory clause gets exactly one variable. Complex provisions become compo
 
 **§32(a)(1)** - "there shall be allowed as a credit..."
 ```
-statute/26/32/a/1/earned_income_credit.cosilico
+statute/26/32/a/1/earned_income_credit.rac
 ```
 
 **§32(a)(2)(A)** - "credit percentage of earned income..."
 ```
-statute/26/32/a/2/A/initial_credit_amount.cosilico
+statute/26/32/a/2/A/initial_credit_amount.rac
 ```
 
 **§32(a)(2)(B)** - "the greater of AGI or earned income..."
 ```
-statute/26/32/a/2/B/credit_reduction_amount.cosilico
+statute/26/32/a/2/B/credit_reduction_amount.rac
 ```
 
 **§32(b)(1)** - Credit percentages (parameter, not formula)
@@ -123,13 +123,13 @@ statute/26/32/b/1/credit_percentage.yaml
 
 **§32(c)(1)(A)(i)** - "has qualifying child"
 ```
-statute/26/32/c/1/A/i/is_eligible_individual.cosilico
+statute/26/32/c/1/A/i/is_eligible_individual.rac
 ```
 
 ### The Final Credit Composes Everything
 
 ```cosilico
-# statute/26/32/a/1/earned_income_credit.cosilico
+# statute/26/32/a/1/earned_income_credit.rac
 #
 # 26 USC §32(a)(1)
 #
@@ -181,7 +181,7 @@ cosilico-us/
 │
 └── regs/                          # Code of Federal Regulations
     └── 26/1.32-1/                 # Reg interpreting §32
-        └── qualifying_child_tiebreaker.cosilico
+        └── qualifying_child_tiebreaker.rac
 ```
 
 The path `regs/26/1.32-1` maps to "26 CFR §1.32-1".
@@ -210,7 +210,7 @@ The engine resolves by source authority.
 When a state references federal law, use fully-qualified paths:
 
 ```cosilico
-# In cosilico-us-ca/statute/rtc/17041/a/ca_taxable_income.cosilico
+# In cosilico-us-ca/statute/rtc/17041/a/ca_taxable_income.rac
 
 module statute.rtc.17041.a
 version "2024.1"

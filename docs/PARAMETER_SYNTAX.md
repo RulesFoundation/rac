@@ -193,7 +193,7 @@ cosilico-us/
           1/
             A/
               credit_percentage.yaml
-              formula.cosilico
+              formula.rac
           2/
             A/
               phase_out_start.yaml

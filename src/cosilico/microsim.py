@@ -245,7 +245,7 @@ def run_microsim(
     dsl_code = ""
 
     # Load AGI formula from cosilico-us
-    agi_path = statute_dir / "26" / "62" / "a" / "adjusted_gross_income.cosilico"
+    agi_path = statute_dir / "26" / "62" / "a" / "adjusted_gross_income.rac"
     if agi_path.exists():
         dsl_code = agi_path.read_text()
     else:

@@ -83,8 +83,8 @@ Cosilico DSL is a purpose-built language for encoding tax and benefit rules. Key
 
 ```
 statute/26/32/                     # 26 USC §32 (EITC) in US repo
-├── a/1/earned_income_credit.cosilico        # §32(a)(1)
-├── a/2/A/initial_credit_amount.cosilico     # §32(a)(2)(A)
+├── a/1/earned_income_credit.rac        # §32(a)(1)
+├── a/2/A/initial_credit_amount.rac     # §32(a)(2)(A)
 ├── b/1/credit_percentage.yaml               # §32(b)(1) parameters
 ├── b/2/A/amounts.yaml                       # §32(b)(2)(A) indexed amounts
 ├── j/1/indexing_rule.yaml                   # §32(j)(1) cost-of-living adjustment
@@ -259,7 +259,7 @@ if condition then expr1 else expr2
 ## Complete Example: EITC (26 USC §32)
 
 ```cosilico
-# statute/26/32/a/1/earned_income_credit.cosilico
+# statute/26/32/a/1/earned_income_credit.rac
 #
 # 26 USC §32(a)(1) - Earned Income Credit
 #
@@ -310,7 +310,7 @@ variable earned_income_credit {
 ## Phase-In Calculation (§32(a)(2)(A))
 
 ```cosilico
-# statute/26/32/a/2/A/initial_credit_amount.cosilico
+# statute/26/32/a/2/A/initial_credit_amount.rac
 
 module statute.26.32.a.2.A
 version "2024.1"

@@ -71,13 +71,13 @@ def calculate_ctc(
     """
     # Get parameters from resolver
     # Credit amount per child (Section 24(h)(2): $2,000 for 2018-2025)
-    credit_data = resolver.load_base_value("statute/26/24/h/2/credit_amount")
+    credit_data = resolver.load_base_value("statute/26/24/h/2")
     credit_per_child = get_value_for_year(
         credit_data["credit_amount"]["values"], tax_year
     )
 
     # Phaseout thresholds (Section 24(b)(1))
-    thresholds = resolver.load_base_value("statute/26/24/b/1/threshold")
+    thresholds = resolver.load_base_value("statute/26/24/b/1")
     if filing_status.upper() == "JOINT":
         phaseout_threshold = get_value_for_year(
             thresholds["phaseout_threshold_joint"]["values"], tax_year
@@ -88,13 +88,13 @@ def calculate_ctc(
         )
 
     # Phaseout rate (Section 24(b)(2): $50 per $1,000)
-    phaseout_rate_data = resolver.load_base_value("statute/26/24/b/2/phaseout_rate")
+    phaseout_rate_data = resolver.load_base_value("statute/26/24/b/2")
     phaseout_per_1000 = get_value_for_year(
         phaseout_rate_data["phaseout_rate"]["values"], tax_year
     )
 
     # ACTC parameters (Section 24(d)(1)(B))
-    actc_params = resolver.load_base_value("statute/26/24/d/1/B/parameters")
+    actc_params = resolver.load_base_value("statute/26/24/d/1/B")
     earned_income_threshold = get_value_for_year(
         actc_params["earned_income_threshold"]["values"], tax_year
     )
@@ -155,7 +155,7 @@ class TestCTCParameterLoading:
 
     def test_credit_amount_2024(self, resolver):
         """Verify credit amount is $2,000 for 2024 (TCJA period)."""
-        credit_data = resolver.load_base_value("statute/26/24/h/2/credit_amount")
+        credit_data = resolver.load_base_value("statute/26/24/h/2")
         assert credit_data is not None
         values = credit_data["credit_amount"]["values"]
         # 2024 falls in TCJA period (2018-2025)
@@ -163,13 +163,13 @@ class TestCTCParameterLoading:
 
     def test_phaseout_thresholds(self, resolver):
         """Verify phaseout thresholds: $400k joint, $200k single."""
-        thresholds = resolver.load_base_value("statute/26/24/b/1/threshold")
+        thresholds = resolver.load_base_value("statute/26/24/b/1")
         assert thresholds["phaseout_threshold_joint"]["values"][date(2018, 1, 1)] == 400000
         assert thresholds["phaseout_threshold_single"]["values"][date(2018, 1, 1)] == 200000
 
     def test_phaseout_rate(self, resolver):
         """Verify phaseout rate is $50 per $1,000."""
-        rate_data = resolver.load_base_value("statute/26/24/b/2/phaseout_rate")
+        rate_data = resolver.load_base_value("statute/26/24/b/2")
         assert rate_data["phaseout_rate"]["values"][date(1998, 1, 1)] == 50
 
     def test_refundable_maximum_2024(self, resolver):
@@ -183,7 +183,7 @@ class TestCTCParameterLoading:
 
     def test_actc_parameters(self, resolver):
         """Verify ACTC parameters: $2,500 threshold, 15% rate."""
-        params = resolver.load_base_value("statute/26/24/d/1/B/parameters")
+        params = resolver.load_base_value("statute/26/24/d/1/B")
         assert params["earned_income_threshold"]["values"][date(2018, 1, 1)] == 2500
         assert params["refundable_rate"]["values"][date(2018, 1, 1)] == 0.15
 

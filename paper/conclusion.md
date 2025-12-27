@@ -30,5 +30,5 @@ This shifts the bottleneck from implementation to validation—a more tractable 
 
 All code, data, and analysis available at:
 - **Repository**: https://github.com/CosilicoAI/cosilico-engine
-- **Documentation**: https://docs.cosilico.ai
-- **Paper**: https://docs.cosilico.ai/paper
+- **Documentation**: https://docs.rac.ai
+- **Paper**: https://docs.rac.ai/paper

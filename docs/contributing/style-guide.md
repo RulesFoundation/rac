@@ -2,7 +2,7 @@
 
 ## File Naming
 
-- Variables: `snake_case.cosilico`
+- Variables: `snake_case.rac`
 - Parameters: `snake_case.yaml`
 - Directories: Match statutory structure
 

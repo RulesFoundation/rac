@@ -19,7 +19,7 @@ This document specifies the language syntax, semantics, and tooling requirements
 ### 1.1 Safety over flexibility
 
 ```
-PRINCIPLE: Any .cosilico file can be executed without risk.
+PRINCIPLE: Any .rac file can be executed without risk.
 ```
 
 Unlike Python, where `@variable` decorated functions can import os, make network calls, or modify global state, Cosilico DSL is:
@@ -42,7 +42,7 @@ PRINCIPLE: Rules are compiled, not interpreted.
 The DSL compiles to an Intermediate Representation (IR) that is then code-generated to targets:
 
 ```
-.cosilico files → Parser → IR → Optimizer → Code Generator → Target
+.rac files → Parser → IR → Optimizer → Code Generator → Target
                                                               ├── Python (NumPy)
                                                               ├── JavaScript (TypedArrays)
                                                               ├── WASM (native)
@@ -120,23 +120,23 @@ def income_tax(tax_unit, period):
 
 ### 2.1 File structure
 
-Files use `.cosilico` extension and follow this statute-organized structure:
+Files use `.rac` extension and follow this statute-organized structure:
 
 ```
 us/26/32/
-├── a/1/earned_income_credit.cosilico        # §32(a)(1)
-├── a/2/A/initial_credit_amount.cosilico     # §32(a)(2)(A)
-├── a/2/B/credit_reduction_amount.cosilico   # §32(a)(2)(B)
+├── a/1/earned_income_credit.rac        # §32(a)(1)
+├── a/2/A/initial_credit_amount.rac     # §32(a)(2)(A)
+├── a/2/B/credit_reduction_amount.rac   # §32(a)(2)(B)
 ├── b/1/credit_percentage.yaml               # §32(b)(1) parameters
 ├── b/2/A/amounts.yaml                       # §32(b)(2)(A) parameters
-├── c/2/A/earned_income.cosilico             # §32(c)(2)(A) definition
-└── c/3/A/num_qualifying_children.cosilico   # §32(c)(3)(A) definition
+├── c/2/A/earned_income.rac             # §32(c)(2)(A) definition
+└── c/3/A/num_qualifying_children.rac   # §32(c)(3)(A) definition
 ```
 
 **The path IS the legal citation.** Folder structure mirrors statute structure.
 
 ```cosilico
-# us/26/32/a/1/earned_income_credit.cosilico
+# us/26/32/a/1/earned_income_credit.rac
 
 # File metadata
 module us.26.32.a.1
@@ -496,7 +496,7 @@ This ensures:
 module us.federal.irs.credits.eitc
 
 # Module path corresponds to file path:
-# rules/us/federal/irs/credits/eitc.cosilico
+# rules/us/federal/irs/credits/eitc.rac
 ```
 
 ### 5.2 Imports
@@ -2301,7 +2301,7 @@ cosilico/
 │   └── us/federal/irs/
 │       └── credits/
 │           └── eitc/
-│               ├── eitc.cosilico       # Rules
+│               ├── eitc.rac       # Rules
 │               ├── parameters.yaml      # Parameters with tiers
 │               └── tests.yaml           # Tests
 │
@@ -2369,7 +2369,7 @@ The compiler catches:
 
 ```
 error[E0001]: Type mismatch in formula
-  --> rules/us/federal/irs/income_tax.cosilico:15:12
+  --> rules/us/federal/irs/income_tax.rac:15:12
    |
 15 |     return agi + is_blind
    |            ^^^^^^^^^^^^^ cannot add Money and Bool
@@ -2382,7 +2382,7 @@ error[E0001]: Type mismatch in formula
 
 ```
 warning[W0001]: Missing unit specification
-  --> rules/us/federal/irs/credits/eitc.cosilico:8:3
+  --> rules/us/federal/irs/credits/eitc.rac:8:3
    |
  8 |   dtype Money
    |   ^^^^^^^^^^ Money type should specify unit (USD, GBP, etc.)
@@ -2390,7 +2390,7 @@ warning[W0001]: Missing unit specification
    = hint: add `unit "USD"` for clarity
 
 warning[W0002]: Test case may be outdated
-  --> rules/us/federal/irs/credits/eitc.cosilico:45:1
+  --> rules/us/federal/irs/credits/eitc.rac:45:1
    |
 45 | test "EITC example" {
    | ^^^^^^^^^^^^^^^^^^^ test uses 2023 parameters but current year is 2024
@@ -2468,7 +2468,7 @@ Automated migration tool:
 cosilico migrate python policyengine_us/variables/irs/credits/eitc.py
 
 # Output:
-# rules/us/federal/irs/credits/eitc.cosilico
+# rules/us/federal/irs/credits/eitc.rac
 ```
 
 The migrator handles:
@@ -2497,7 +2497,7 @@ foreign us.legacy.complex_calculation {
 ## 11. Example: complete EITC implementation
 
 ```cosilico
-# rules/us/federal/irs/credits/eitc.cosilico
+# rules/us/federal/irs/credits/eitc.rac
 
 module us.federal.irs.credits.eitc
 version "2024.1"

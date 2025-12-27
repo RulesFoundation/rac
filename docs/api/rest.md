@@ -3,7 +3,7 @@
 ## Base URL
 
 ```
-https://api.cosilico.ai/v1
+https://api.rac.ai/v1
 ```
 
 ## Calculate

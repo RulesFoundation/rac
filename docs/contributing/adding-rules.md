@@ -9,7 +9,7 @@ cosilico-us/
 └── irc/
     └── subtitle_a/.../§<section>/
         ├── variables/
-        │   └── <variable_name>.cosilico
+        │   └── <variable_name>.rac
         └── parameters/
             └── <parameter_name>.yaml
 ```
@@ -21,7 +21,7 @@ cosilico-us/
 3. Write the variable file
 
 ```cosilico
-# us/irc/.../§XX/(a)/variables/my_variable.cosilico
+# us/irc/.../§XX/(a)/variables/my_variable.rac
 
 references:
   dep1: us/irc/.../other_variable

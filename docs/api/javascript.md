@@ -39,7 +39,7 @@ The WASM build runs entirely in-browser:
 
 ```html
 <script type="module">
-import { Simulation } from 'https://cdn.cosilico.ai/engine.js';
+import { Simulation } from 'https://cdn.rac.ai/engine.js';
 
 const sim = new Simulation({ jurisdictions: ['us'], year: 2024 });
 // ...
