@@ -1,6 +1,7 @@
-"""Native compilation for maximum performance (97M/sec).
+"""Native compilation for maximum performance.
 
 Automatically downloads Rust toolchain if needed, compiles IR to native binary.
+Uses raw binary I/O (f64 arrays) instead of JSON for speed.
 """
 
 import hashlib
@@ -8,10 +9,10 @@ import json
 import os
 import platform
 import shutil
+import struct
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any
 
 from .compiler import IR
 from .codegen.rust import generate_rust
@@ -78,17 +79,47 @@ def _ir_hash(ir: IR) -> str:
 class CompiledBinary:
     """A compiled RAC binary for maximum performance."""
 
-    def __init__(self, binary_path: Path, ir: IR):
+    def __init__(self, binary_path: Path, ir: IR, input_fields: list[str], output_fields: list[str]):
         self.binary_path = binary_path
         self.ir = ir
+        self.input_fields = input_fields
+        self.output_fields = output_fields
 
-    def run(self, data: dict[str, list[dict]]) -> dict[str, list[dict]]:
-        """Run the binary on data and return results."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            json.dump(data, f)
-            input_path = f.name
+    def run(self, data) -> dict[str, list[dict]]:
+        """Run the binary on data and return results.
 
-        output_path = tempfile.mktemp(suffix='.json')
+        Uses raw binary format: [n_rows as u64][f64 * n_fields * n_rows]
+
+        Args:
+            data: Either dict of entity -> list of row dicts, or numpy array
+                  If numpy array, shape must be (n_rows, n_input_fields)
+        """
+        import numpy as np
+
+        # Handle numpy array input (fast path)
+        if isinstance(data, np.ndarray):
+            input_arr = data.astype(np.float64, copy=False)
+            entity_name = "data"
+            n_rows = len(input_arr)
+        else:
+            # Get entity name and rows
+            entity_name = list(data.keys())[0]
+            rows = data[entity_name]
+            n_rows = len(rows)
+
+            # Build input array efficiently
+            input_arr = np.array([
+                [float(row.get(field, 0.0)) for field in self.input_fields]
+                for row in rows
+            ], dtype=np.float64)
+
+        # Write binary input
+        input_path = tempfile.mktemp(suffix='.bin')
+        with open(input_path, 'wb') as f:
+            f.write(struct.pack('<Q', n_rows))
+            input_arr.tofile(f)
+
+        output_path = tempfile.mktemp(suffix='.bin')
 
         try:
             result = subprocess.run(
@@ -99,8 +130,22 @@ class CompiledBinary:
             if result.returncode != 0:
                 raise RuntimeError(f"Binary failed: {result.stderr}")
 
-            with open(output_path) as f:
-                return json.load(f)
+            # Read binary output
+            with open(output_path, 'rb') as f:
+                out_n = struct.unpack('<Q', f.read(8))[0]
+                output_arr = np.fromfile(f, dtype=np.float64).reshape(out_n, len(self.output_fields))
+
+            # Return numpy array if input was numpy
+            if isinstance(data, np.ndarray):
+                return output_arr
+
+            # Convert to list of dicts
+            output_rows = [
+                {field: output_arr[i, j] for j, field in enumerate(self.output_fields)}
+                for i in range(out_n)
+            ]
+
+            return {entity_name: output_rows}
         finally:
             os.unlink(input_path)
             if os.path.exists(output_path):
@@ -115,7 +160,7 @@ def compile_to_binary(ir: IR, cache: bool = True) -> CompiledBinary:
         cache: Cache compiled binaries (default True)
 
     Returns:
-        CompiledBinary that can run data at ~100M rows/sec
+        CompiledBinary that can run data at high speed
 
     Example:
         >>> from rac import parse, compile
@@ -129,6 +174,19 @@ def compile_to_binary(ir: IR, cache: bool = True) -> CompiledBinary:
     """
     cargo = ensure_cargo()
 
+    # Get entity info
+    entity_name = None
+    input_fields = []
+    output_fields = []
+    for path in ir.order:
+        var = ir.variables[path]
+        if var.entity:
+            entity_name = var.entity
+            output_fields.append(path)
+
+    if entity_name and entity_name in ir.schema_.entities:
+        input_fields = list(ir.schema_.entities[entity_name].fields.keys())
+
     ir_hash = _ir_hash(ir)
     project_dir = CACHE_DIR / "projects" / ir_hash
 
@@ -136,20 +194,18 @@ def compile_to_binary(ir: IR, cache: bool = True) -> CompiledBinary:
     binary_path = project_dir / "target" / "release" / binary_name
 
     if cache and binary_path.exists():
-        return CompiledBinary(binary_path, ir)
+        return CompiledBinary(binary_path, ir, input_fields, output_fields)
 
     # Create Cargo project
     project_dir.mkdir(parents=True, exist_ok=True)
 
-    # Cargo.toml
+    # Cargo.toml - no serde needed for binary I/O
     (project_dir / "Cargo.toml").write_text('''[package]
 name = "rac_native"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
 rayon = "1.10"
 
 [profile.release]
@@ -159,7 +215,7 @@ codegen-units = 1
 
     # Generate Rust code
     rust_code = generate_rust(ir)
-    main_code = _generate_main(ir)
+    main_code = _generate_main(ir, input_fields, output_fields)
 
     src_dir = project_dir / "src"
     src_dir.mkdir(exist_ok=True)
@@ -178,107 +234,95 @@ codegen-units = 1
         raise RuntimeError(f"Compilation failed:\n{result.stderr}")
 
     print("Compilation complete")
-    return CompiledBinary(binary_path, ir)
+    return CompiledBinary(binary_path, ir, input_fields, output_fields)
 
 
-def _generate_main(ir: IR) -> str:
-    """Generate main function with JSON I/O."""
-    entities = {}
+def _generate_main(ir: IR, input_fields: list[str], output_fields: list[str]) -> str:
+    """Generate main function with binary I/O.
+
+    Binary format:
+    - Input: [n_rows: u64][f64 * n_input_fields * n_rows]
+    - Output: [n_rows: u64][f64 * n_output_fields * n_rows]
+    """
+    # Find entity info
+    entity_name = None
     for path in ir.order:
         var = ir.variables[path]
         if var.entity:
-            if var.entity not in entities:
-                entities[var.entity] = []
-            entities[var.entity].append(path)
+            entity_name = var.entity
+            break
 
-    # Generate struct derives and input parsing
-    input_structs = []
-    entity_processing = []
-    output_building = []
+    if not entity_name:
+        return """
+fn main() {
+    eprintln!("No entity variables to compute");
+}
+"""
 
-    for entity_name, var_paths in entities.items():
-        type_name = "".join(part.capitalize() for part in entity_name.split("_"))
-        safe_name = entity_name.replace("-", "_").replace("/", "_")
+    type_name = "".join(part.capitalize() for part in entity_name.split("_"))
+    n_inputs = len(input_fields)
+    n_outputs = len(output_fields)
 
-        # Get fields from schema with types
-        fields = []
-        field_types = {}
-        if entity_name in ir.schema_.entities:
-            for fname, fdef in ir.schema_.entities[entity_name].fields.items():
-                fields.append(fname)
-                field_types[fname] = fdef.dtype
+    # Generate field assignments from binary data
+    field_reads = []
+    for i, f in enumerate(input_fields):
+        field_reads.append(f"                {f}: row[{i}]")
 
-        # Type mapping for JSON
-        def json_type(dtype: str) -> str:
-            return {"int": "i64", "float": "f64", "str": "String", "bool": "bool"}.get(dtype, "f64")
-
-        # Input struct with serde
-        field_defs = "\n    ".join(f"pub {f}: {json_type(field_types.get(f, 'float'))}," for f in fields)
-        input_structs.append(f'''
-#[derive(Debug, Deserialize)]
-struct {type_name}JsonInput {{
-    {field_defs}
-}}''')
-
-        # Parse and process
-        field_copies = ", ".join(f"{f}: inp.{f}" for f in fields)
-        entity_processing.append(f'''
-    let {safe_name}_inputs: Vec<{type_name}JsonInput> = input.get("{entity_name}")
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .unwrap_or_default();
-
-    let {safe_name}_outputs: Vec<{type_name}Output> = {safe_name}_inputs
-        .par_iter()
-        .map(|inp| {{
-            let input = {type_name}Input {{ {field_copies} }};
-            {type_name}Output::compute(&input, &scalars)
-        }})
-        .collect();''')
-
-        # Output JSON
-        output_fields = []
-        for p in var_paths:
-            safe_p = p.replace("/", "_")
-            output_fields.append(f'"{p}": o.{safe_p}')
-
-        output_building.append(f'''
-    let {safe_name}_json: Vec<serde_json::Value> = {safe_name}_outputs
-        .iter()
-        .zip({safe_name}_inputs.iter())
-        .map(|(o, inp)| {{
-            serde_json::json!({{
-                {", ".join(output_fields)}
-            }})
-        }})
-        .collect();
-    output.insert("{entity_name}".to_string(), serde_json::json!({safe_name}_json));''')
+    # Generate output writes
+    output_writes = []
+    for i, path in enumerate(output_fields):
+        safe_name = path.replace("/", "_")
+        output_writes.append(f"            out[{i}] = o.{safe_name};")
 
     return f'''
 use rayon::prelude::*;
-use serde::Deserialize;
-use std::collections::HashMap;
 use std::env;
-use std::fs;
-
-{chr(10).join(input_structs)}
+use std::fs::File;
+use std::io::{{Read, Write, BufReader, BufWriter}};
 
 fn main() {{
     let args: Vec<String> = env::args().collect();
     if args.len() != 3 {{
-        eprintln!("Usage: {{}} <input.json> <output.json>", args[0]);
+        eprintln!("Usage: {{}} <input.bin> <output.bin>", args[0]);
         std::process::exit(1);
     }}
 
-    let input_str = fs::read_to_string(&args[1]).expect("Failed to read input");
-    let input: HashMap<String, serde_json::Value> = serde_json::from_str(&input_str).expect("Invalid JSON");
+    // Read binary input
+    let mut file = BufReader::new(File::open(&args[1]).expect("Failed to open input"));
+    let mut buf8 = [0u8; 8];
+    file.read_exact(&mut buf8).expect("Failed to read count");
+    let n_rows = u64::from_le_bytes(buf8) as usize;
 
+    let n_input_fields = {n_inputs};
+    let mut input_data = vec![0.0f64; n_rows * n_input_fields];
+    for i in 0..n_rows * n_input_fields {{
+        file.read_exact(&mut buf8).expect("Failed to read data");
+        input_data[i] = f64::from_le_bytes(buf8);
+    }}
+
+    // Compute scalars
     let scalars = Scalars::compute();
-    let mut output: HashMap<String, serde_json::Value> = HashMap::new();
 
-    {chr(10).join(entity_processing)}
-    {chr(10).join(output_building)}
+    // Process rows in parallel
+    let n_output_fields = {n_outputs};
+    let mut output_data = vec![0.0f64; n_rows * n_output_fields];
 
-    let output_str = serde_json::to_string(&output).expect("Failed to serialize");
-    fs::write(&args[2], output_str).expect("Failed to write output");
+    input_data
+        .par_chunks(n_input_fields)
+        .zip(output_data.par_chunks_mut(n_output_fields))
+        .for_each(|(row, out)| {{
+            let input = {type_name}Input {{
+{chr(10).join(field_reads)}
+            }};
+            let o = {type_name}Output::compute(&input, &scalars);
+{chr(10).join(output_writes)}
+        }});
+
+    // Write binary output
+    let mut out_file = BufWriter::new(File::create(&args[2]).expect("Failed to create output"));
+    out_file.write_all(&(n_rows as u64).to_le_bytes()).expect("Failed to write count");
+    for v in output_data {{
+        out_file.write_all(&v.to_le_bytes()).expect("Failed to write data");
+    }}
 }}
 '''
