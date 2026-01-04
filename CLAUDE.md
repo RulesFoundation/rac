@@ -1,29 +1,20 @@
 # RAC
 
-Core DSL parser, compiler, and executor for encoding tax and benefit law.
+Core DSL parser, compiler, and native executor for encoding tax and benefit law.
 
-## What belongs here
+## Structure
 
-- `src/rac/ast.py` - AST nodes
-- `src/rac/parser.py` - Lexer and parser
-- `src/rac/compiler.py` - Temporal resolution, dependency analysis
-- `src/rac/executor.py` - Evaluate IR against data
-- `src/rac/schema.py` - Entity/field definitions
-- `tests/` - Unit tests
-
-## What does not belong here
-
-- `.rac` files with real statute encodings (those go in rac-us, rac-uk)
-- `parameters.yaml` with real values
+- `src/rac/parser.py` - Lexer and recursive descent parser
+- `src/rac/compiler.py` - Temporal resolution, dependency ordering
+- `src/rac/executor.py` - Pure Python executor (debugging)
+- `src/rac/native.py` - Rust compilation (production)
+- `src/rac/codegen/rust.py` - Rust code generation
+- `examples/` - UK tax-benefit example and reform runner
 
 ## Commands
 
 ```bash
-uv pip install -e .
-pytest tests/ -v
+uv sync
+uv run pytest tests/ -v
+uv run python examples/run_reform.py examples/uk_tax_benefit.rac examples/reform.rac
 ```
-
-## Related repos
-
-- **rac-us** - US statute encodings
-- **rac-uk** - UK statute encodings

@@ -1,6 +1,6 @@
 # RAC
 
-DSL parser and executor for encoding tax and benefit law.
+High-performance DSL for encoding tax and benefit law. Compiles to native Rust for ~10M households/sec.
 
 ## Install
 
@@ -8,68 +8,82 @@ DSL parser and executor for encoding tax and benefit law.
 pip install -e .
 ```
 
-## Usage
+## Run a reform
 
-```python
-from datetime import date
-from rac import parse, compile, execute
+```bash
+python examples/run_reform.py examples/uk_tax_benefit.rac examples/reform.rac
+```
 
-# Parse source
-module = parse('''
-    variable gov/tax/rate:
-        from 2024-01-01: 0.25
+Output:
+```
+Population: 1,000,000
+Baseline run: 0.24s (4.1M/sec)
+Reform run:   0.21s (4.7M/sec)
 
-    variable gov/tax/liability:
-        entity: person
-        from 2024-01-01: income * gov/tax/rate
-''')
+Aggregate impact:
+  Total cost: £10.04bn/year
+  Avg gain:   £836/month
+  Winners:    858,609 (85.9%)
 
-# Compile for a date
-ir = compile([module], as_of=date(2024, 6, 1))
-
-# Execute against data
-result = execute(ir, {"person": [{"id": 1, "income": 50000}]})
-print(result.values["gov/tax/rate"])  # 0.25
+By income decile:
+  Decile   Avg Income   Avg Gain  % Winners
+       1 £     7,644 £        0         0%
+       2 £    12,941 £      152        59%
+       3 £    17,299 £      532       100%
+       ...
 ```
 
 ## DSL syntax
 
-```
-# Entity declaration
+```rac
+# Entity with typed fields
 entity person:
+    gross_income: float
     age: int
-    income: float
-    household: -> household
 
-entity household:
-    members: [person]
+# Temporal parameters
+variable gov/hmrc/it/personal_allowance:
+    from 2024-04-06: 12570
 
-# Variable with temporal values
-variable gov/irs/standard_deduction:
-    from 2023-01-01 to 2023-12-31: 13850
-    from 2024-01-01: 14600
-
-# Entity-scoped variable
-variable person/tax_liability:
+# Entity-scoped computation
+variable person/income_tax:
     entity: person
-    from 2024-01-01:
-        if income > 50000: income * 0.22
-        else: income * 0.12
+    from 2024-04-06:
+        max(0, gross_income - gov/hmrc/it/personal_allowance) * 0.20
 
-# Amendment (override existing variable)
-amend gov/irs/standard_deduction:
-    from 2024-01-01: 15000
+# Reform via amendment
+amend gov/hmrc/it/personal_allowance:
+    from 2024-04-06: 15000
+```
+
+## Python API
+
+```python
+from datetime import date
+from rac import parse, compile, compile_to_binary
+import numpy as np
+
+# Parse and compile
+module = parse(open('rules.rac').read())
+ir = compile([module], as_of=date(2024, 6, 1))
+
+# Compile to native binary (auto-installs Rust on first run)
+binary = compile_to_binary(ir)
+
+# Run on numpy arrays
+data = {'person': np.array([[50000.0, 30], [75000.0, 45]])}  # income, age
+result = binary.run(data)  # Returns numpy array of computed values
 ```
 
 ## Structure
 
 ```
 src/rac/
-├── ast.py       # AST node definitions
 ├── parser.py    # Lexer and recursive descent parser
-├── compiler.py  # Temporal resolution, dependency analysis
-├── executor.py  # Evaluate IR against data
-└── schema.py    # Entity/field schema definitions
+├── compiler.py  # Temporal resolution, dependency ordering
+├── executor.py  # Pure Python executor (for debugging)
+├── native.py    # Rust compilation (production speed)
+└── codegen/     # Rust code generation
 ```
 
 ## Tests
@@ -77,12 +91,3 @@ src/rac/
 ```bash
 pytest tests/ -v
 ```
-
-## Related repos
-
-- **rac-us** - US statute encodings
-- **rac-uk** - UK statute encodings
-
-## Licence
-
-Apache 2.0
