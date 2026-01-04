@@ -1,42 +1,40 @@
 # Session state
 
 ## Branch
-`refactor/clean-parser-engine` (pushed)
+`refactor/clean-parser-engine` (PR #2 open)
 
 ## What was done
-1. Stripped all old code (~40k lines deleted)
-2. Created clean parser engine:
-   - `src/rac/ast.py` - Pydantic AST nodes
-   - `src/rac/parser.py` - Lexer + recursive descent
-   - `src/rac/compiler.py` - Temporal resolution, amendments, topo sort
-   - `src/rac/executor.py` - Evaluate IR against relational data
-   - `src/rac/schema.py` - Entity/FK/PK data model
-   - `src/rac/codegen/rust.py` - Rust code generator
+1. Clean parser engine with temporal resolution, amendments, entity variables
+2. Executor supports entity variable chaining
+3. **Rust codegen working** - compiles to native code
+   - 10M households in 58ms (171M/sec)
+   - vs Python: 35k/sec (4800x speedup)
 
-3. Removed: benchmarks, data, docs, paper, viz, old tests
+## Files
+- `src/rac/ast.py` - Pydantic AST nodes
+- `src/rac/parser.py` - Lexer + recursive descent
+- `src/rac/compiler.py` - Temporal resolution, amendments, topo sort
+- `src/rac/executor.py` - Evaluate IR against relational data
+- `src/rac/schema.py` - Entity/FK/PK data model
+- `src/rac/codegen/rust.py` - Rust code generator
 
-## What's left
-1. Fix syntax error in rust.py line 179 (already fixed, just run tests)
-2. Run `pytest tests/ -v` to verify
-3. Could add more codegen targets (JS, Python, SQL)
+## Examples
+- `examples/niit.rac` - US net investment income tax
+- `examples/uk_income_tax.rac` - UK income tax, NICs, child benefit
 
-## Quick test
+## Rust compilation workflow
 ```python
 from datetime import date
-from rac import parse, compile, execute
+from rac import parse, compile
+from rac.codegen.rust import generate_rust
 
-module = parse('''
-    variable gov/rate:
-        from 2024-01-01: 0.25
-''')
+module = parse(open('examples/uk_income_tax.rac').read())
 ir = compile([module], as_of=date(2024, 6, 1))
-result = execute(ir, {})
-print(result.scalars)  # {'gov/rate': 0.25}
+rust_code = generate_rust(ir)
+# Write to .rs file, add main(), compile with rustc -O
 ```
 
-## Key features
-- Temporal values with date ranges
-- Amendments can override/replace variables (like legislation)
-- Repeals make variables undefined after a date
-- Relational data with FK/PK lookups
-- Rust codegen from IR
+## What's next
+- More codegen targets (JS, Python, SQL)
+- SIMD/vectorisation in Rust codegen
+- Foreign key lookups in Rust
