@@ -1,0 +1,7 @@
+# Reform: Raise personal allowance to £15,000 and cut basic rate to 18%
+
+amend gov/hmrc/it/personal_allowance:
+    from 2024-04-06: 15000
+
+amend gov/hmrc/it/basic_rate:
+    from 2024-04-06: 0.18
