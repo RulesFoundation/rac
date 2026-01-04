@@ -181,7 +181,7 @@ class TestRustCodegen:
         ir = compile([module], as_of=date(2024, 6, 1))
         rust_code = generate_rust(ir)
 
-        assert "pub struct Context" in rust_code
+        assert "pub struct Scalars" in rust_code
         assert "fn compute" in rust_code
         assert "gov_rate" in rust_code
         assert "gov_base" in rust_code
@@ -195,6 +195,6 @@ class TestRustCodegen:
         ir = compile([module], as_of=date(2024, 6, 1))
         rust_code = generate_rust(ir)
 
-        assert "pub struct Person" in rust_code
+        assert "pub struct PersonInput" in rust_code
         assert "pub age: i64" in rust_code
         assert "pub income: f64" in rust_code
